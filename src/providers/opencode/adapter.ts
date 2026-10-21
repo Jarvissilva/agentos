@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { probe, runInteractive } from "../../platform/process";
-import { captureJson, executeNative } from "../execution";
+import { captureJson, captureOutput, executeNative } from "../execution";
 import { openCodeModels } from "../models";
 import type {
   ExecutionInput,
@@ -12,6 +12,7 @@ import type {
 const response = z.object({
   data: z.object({
     id: z.string().startsWith("ses"),
+    title: z.string().nullish(),
     model: z
       .object({
         id: z.string(),
@@ -54,24 +55,23 @@ export class OpenCodeAdapter implements ProviderAdapter {
     );
   }
   async connect(cwd?: string): Promise<ProviderConnection> {
+    const args = (method: string, path: string, data?: unknown) => [
+      "api",
+      "--standalone",
+      method,
+      path,
+      ...(data ? ["--data", JSON.stringify(data)] : []),
+    ];
     const api = (method: string, path: string, data?: unknown) =>
-      captureJson(
-        "opencode",
-        [
-          "api",
-          "--standalone",
-          method,
-          path,
-          ...(data ? ["--data", JSON.stringify(data)] : []),
-        ],
-        cwd,
-      );
+      captureJson("opencode", args(method, path, data), cwd);
+    const request = (method: string, path: string, data?: unknown) =>
+      captureOutput("opencode", args(method, path, data), cwd);
     return {
-      async create(directory, options) {
+      async create(directory, options, title) {
         const r = response.parse(
           await api("POST", "/api/session", {
             location: { directory },
-            title: "agentos",
+            ...(title ? { title } : {}),
             ...(options?.nativeModel ? { model: options.nativeModel } : {}),
           }),
         );
@@ -84,6 +84,17 @@ export class OpenCodeAdapter implements ProviderAdapter {
         )
           throw new Error("OpenCode rejected the configured model or variant");
         return { threadId: r.data.id, sessionId: r.data.id };
+      },
+      async readTitle(id) {
+        const r = response.parse(
+          await api("GET", `/api/session/${encodeURIComponent(id)}`),
+        );
+        return r.data.title?.trim() || null;
+      },
+      async rename(id, title) {
+        await request("POST", `/api/session/${encodeURIComponent(id)}/rename`, {
+          title,
+        });
       },
       async resume(id) {
         response.parse(

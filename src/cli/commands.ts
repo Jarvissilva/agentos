@@ -187,12 +187,16 @@ export function commands(app: Application) {
               (!projectId || s.projectId === projectId) &&
               (!options.provider || s.provider === options.provider) &&
               (!options.search ||
-                `${s.id} ${s.cwd} ${s.status}`
+                `${s.id} ${s.title ?? ""} ${s.cwd} ${s.status}`
                   .toLowerCase()
                   .includes(options.search.toLowerCase())),
           ),
       );
     });
+  sessions
+    .command("rename <id> <title>")
+    .description("Rename a session locally and in its native provider")
+    .action(async (id, title) => output(await app.renameSession(id, title)));
   sessions.command("show <id>").action((id) => output(app.session(id)));
   sessions.command("resume <id>").action(async (id) => {
     const session = await app.resumeSession(id);

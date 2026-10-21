@@ -45,7 +45,7 @@ test("native contracts pass model settings to initialization and TUI while resum
         if(args.includes("/api/model"))console.log(JSON.stringify({data:[{modelID:"org/model",providerID:"router",name:"Native",enabled:true,variants:[{id:"thinking"}]}]}));
         else if(args.includes("POST")) {
           const body=JSON.parse(args[args.indexOf("--data")+1]);record({body});
-          console.log(JSON.stringify({data:{id:"ses-test",model:existsSync(${JSON.stringify(join(f.root, "reject-model"))})?{id:"fallback",providerID:"other"}:body.model}}));
+          if(!args.includes("/rename"))console.log(JSON.stringify({data:{id:"ses-test",model:existsSync(${JSON.stringify(join(f.root, "reject-model"))})?{id:"fallback",providerID:"other"}:body.model}}));
         } else console.log(JSON.stringify({data:{id:"ses-test"}}));
       }
     `,
@@ -80,6 +80,7 @@ test("native contracts pass model settings to initialization and TUI while resum
       model: "native-model",
       reasoning: "low",
     });
+    const sessionIds: Record<string, string> = {};
     for (const provider of ["codex", "opencode", "agy"]) {
       const session = await f.app.newSession({
         provider,
@@ -87,6 +88,7 @@ test("native contracts pass model settings to initialization and TUI while resum
         prompt: "Task",
       });
       expect(session.status).toBe("idle");
+      sessionIds[provider] = session.id;
       await f.app.resumeSession(session.id);
     }
     const calls: {
@@ -107,6 +109,17 @@ test("native contracts pass model settings to initialization and TUI while resum
       model: "native-model",
       config: { model_reasoning_effort: "high" },
     });
+    expect(
+      codex.find((c) => c.request?.method === "thread/name/set")?.request
+        ?.params,
+    ).toEqual({ threadId: "thread", name: "Task" });
+    expect(
+      codex.some(
+        (c) =>
+          c.request?.method === "thread/name/set" &&
+          JSON.stringify(c.request.params).includes("agentos"),
+      ),
+    ).toBe(false);
     const codexLaunches = codex.filter((c) => c.args?.[0] === "resume");
     expect(codexLaunches.map((c) => c.args)).toEqual([
       [
@@ -127,7 +140,7 @@ test("native contracts pass model settings to initialization and TUI while resum
       calls.find((c) => c.provider === "opencode" && c.body)?.body,
     ).toEqual({
       location: { directory: f.root },
-      title: "agentos",
+      title: "Task",
       model: { id: "org/model", providerID: "router", variant: "thinking" },
     });
     expect(
@@ -154,6 +167,56 @@ test("native contracts pass model settings to initialization and TUI while resum
       "--prompt-interactive=Task",
     ]);
     expect(agy.at(-1)?.args).toEqual(["--conversation", "conversation"]);
+    const codexId = sessionIds.codex;
+    const opencodeId = sessionIds.opencode;
+    if (!codexId || !opencodeId) throw new Error("Expected native sessions");
+    await f.app.renameSession(codexId, "Codex renamed");
+    await f.app.renameSession(opencodeId, "OpenCode renamed");
+    expect(f.app.session(codexId).title).toBe("Codex renamed");
+    expect(f.app.session(opencodeId).title).toBe("OpenCode renamed");
+    const renamedCalls = readFileSync(log, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(
+      renamedCalls.find(
+        (c) =>
+          c.request?.method === "thread/name/set" &&
+          c.request.params.name === "Codex renamed",
+      )?.request?.params,
+    ).toEqual({ threadId: "thread", name: "Codex renamed" });
+    expect(
+      renamedCalls.filter(
+        (c) =>
+          c.provider === "opencode" &&
+          c.body &&
+          typeof c.body === "object" &&
+          "title" in c.body &&
+          c.body.title === "OpenCode renamed",
+      ),
+    ).toHaveLength(1);
+    const blank = await f.app.newSession({ provider: "codex", cwd: f.root });
+    expect(blank.title).toBeNull();
+    const blankOpenCode = await f.app.newSession({
+      provider: "opencode",
+      cwd: f.root,
+    });
+    expect(blankOpenCode.title).toBeNull();
+    const withBlank = readFileSync(log, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(
+      withBlank.find((c) => c.request?.method === "thread/section/move")
+        ?.request?.params,
+    ).toEqual({ threadId: "thread", sectionId: null });
+    const openCodeBodies = withBlank.filter(
+      (c) => c.provider === "opencode" && c.body,
+    );
+    expect(openCodeBodies.at(-1)?.body).toEqual({
+      location: { directory: f.root },
+      model: { id: "org/model", providerID: "router", variant: "thinking" },
+    });
     writeFileSync(join(f.root, "reject-model"), "true");
     await expect(
       f.app.newSession({ provider: "codex", cwd: f.root }),

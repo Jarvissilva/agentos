@@ -150,6 +150,10 @@ export function ResourceModal({
   const contextActions = contextCommands
     .map((command) => command.name)
     .slice(0, 5);
+  const canRename =
+    report === null &&
+    activeSection === "sessions" &&
+    contextCommands.some((command) => command.name === "rename");
 
   const detailMode = view.kind === "detail" || report !== null;
 
@@ -345,6 +349,7 @@ export function ResourceModal({
                 <Hints
                   items={[
                     ...(creationCommand ? [{ key: "n", label: "new" }] : []),
+                    ...(canRename ? [{ key: "r", label: "rename" }] : []),
                     { key: "/", label: "commands" },
                     ...(width >= 78
                       ? [{ key: "↑↓", label: detailMode ? "scroll" : "move" }]

@@ -71,7 +71,7 @@ export function projectsView(context: ResourceContext): ResourceView {
           .filter((s) => s.projectId === project.id)
           .map(
             (s) =>
-              `  ${s.provider} · ${prettyPath(s.cwd)} · ${s.id.slice(0, 8)}`,
+              `  ${s.provider} · ${s.title ?? prettyPath(s.cwd)} · ${s.id.slice(0, 8)}`,
           ),
         `Automations ${automations.filter((a) => a.projectId === project.id).length}`,
         ...automations

@@ -38,6 +38,7 @@ import {
   sessions,
 } from "../storage/schema";
 import { McpService } from "./mcps";
+import { cleanSessionTitle, sessionTitle } from "./session-title";
 import { SkillService } from "./skills";
 
 const definitionSchema = z.object({
@@ -89,6 +90,8 @@ export type SessionLauncher = ((
 
 export class Application {
   private readonly interactiveOperations = new Set<Promise<Session>>();
+  private readonly sessionListeners = new Set<() => void>();
+  private syncingTitles?: Promise<number>;
   readonly skills: SkillService;
   readonly mcps: McpService;
   readonly automations: AutomationService;
@@ -386,6 +389,127 @@ export class Application {
       .orderBy(desc(sessions.updatedAt))
       .all();
   }
+  onSessionsChanged(listener: () => void) {
+    this.sessionListeners.add(listener);
+    return () => {
+      this.sessionListeners.delete(listener);
+    };
+  }
+  private sessionsChanged() {
+    for (const listener of this.sessionListeners) {
+      try {
+        listener();
+      } catch {
+        // A failed UI listener must not roll back the stored title.
+      }
+    }
+  }
+  private applySessionTitle(
+    session: Pick<Session, "id" | "title">,
+    input: string | null | undefined,
+  ) {
+    const title = cleanSessionTitle(input);
+    if (!title || title === session.title) return false;
+    this.db
+      .update(sessions)
+      .set({ title })
+      .where(eq(sessions.id, session.id))
+      .run();
+    this.sessionsChanged();
+    return true;
+  }
+  async renameSession(id: string, input: string) {
+    const session = this.session(id);
+    const title = sessionTitle(input);
+    if (!title) throw new Error("Session title cannot be empty");
+    if (session.nativeThreadId) {
+      const connection = await this.providers
+        .adapter(session.provider)
+        .connect(session.cwd);
+      try {
+        if (connection.rename)
+          await connection.rename(session.nativeThreadId, title);
+      } finally {
+        await connection.close();
+      }
+    }
+    const updated = this.db
+      .update(sessions)
+      .set({ title })
+      .where(eq(sessions.id, session.id))
+      .returning()
+      .get();
+    this.sessionsChanged();
+    return updated;
+  }
+  async syncSessionName(id: string) {
+    const session = this.session(id);
+    if (!session.nativeThreadId) return false;
+    const connection = await this.providers
+      .adapter(session.provider)
+      .connect(session.cwd);
+    try {
+      if (!connection.readTitle) return false;
+      try {
+        const title = await connection.readTitle(session.nativeThreadId);
+        return this.applySessionTitle(session, title);
+      } catch {
+        return false;
+      }
+    } finally {
+      await connection.close();
+    }
+  }
+  async syncSessionNames() {
+    if (this.syncingTitles) return this.syncingTitles;
+    this.syncingTitles = (async () => {
+      const groups = new Map<
+        string,
+        { provider: ProviderId; cwd: string; sessions: Session[] }
+      >();
+      for (const session of this.listSessions()) {
+        if (!session.nativeThreadId) continue;
+        const key = `${session.provider}\u0000${session.cwd}`;
+        const group = groups.get(key);
+        if (group) group.sessions.push(session);
+        else
+          groups.set(key, {
+            provider: session.provider as ProviderId,
+            cwd: session.cwd,
+            sessions: [session],
+          });
+      }
+      let changed = 0;
+      await Promise.allSettled(
+        [...groups.values()].map(async (group) => {
+          const connection = await this.providers
+            .adapter(group.provider)
+            .connect(group.cwd);
+          try {
+            if (!connection.readTitle) return;
+            for (const session of group.sessions) {
+              try {
+                const title = await connection.readTitle(
+                  session.nativeThreadId ?? "",
+                );
+                if (this.applySessionTitle(session, title)) changed++;
+              } catch {
+                // Keep the last known title when a provider is temporarily unavailable.
+              }
+            }
+          } finally {
+            await connection.close();
+          }
+        }),
+      );
+      return changed;
+    })();
+    try {
+      return await this.syncingTitles;
+    } finally {
+      this.syncingTitles = undefined;
+    }
+  }
   assignSessionProject(id: string, project?: string) {
     const session = this.session(id);
     const projectId = project ? this.project(project).id : null;
@@ -438,6 +562,10 @@ export class Application {
     const project = input.project ? this.project(input.project) : undefined;
     const agent = input.agent ? this.agent(input.agent) : undefined;
     const definition = agent ? this.agentDefinition(agent.id) : undefined;
+    const prompt = definition
+      ? `agentos role: ${definition.name}\n\n${definition.instructions}\n\n${input.prompt || "Use this role for this conversation and wait for my task."}`
+      : input.prompt;
+    const title = sessionTitle(input.prompt);
     const cwd = directory(
       input.cwd ?? this.defaultDirectory() ?? process.cwd(),
     );
@@ -462,6 +590,7 @@ export class Application {
         provider: adapter.id,
         providerVersion: info.version ?? "unknown",
         cwd,
+        title: title ?? null,
         projectId: project?.id,
         agentId: agent?.id,
         agentHash: definition
@@ -475,9 +604,11 @@ export class Application {
       })
       .run();
     let connection: ProviderConnection | undefined;
+    let completed = false;
+    let needsTitleSync = false;
     try {
       connection = await adapter.connect(cwd);
-      const native = await connection.create(cwd, options);
+      const native = await connection.create(cwd, options, title);
       this.db
         .update(sessions)
         .set({
@@ -488,9 +619,6 @@ export class Application {
         })
         .where(eq(sessions.id, id))
         .run();
-      const prompt = definition
-        ? `agentos role: ${definition.name}\n\n${definition.instructions}\n\n${input.prompt || "Use this role for this conversation and wait for my task."}`
-        : input.prompt;
       const active = connection;
       await this.attach(
         id,
@@ -507,12 +635,28 @@ export class Application {
           ),
         handoff,
       );
+      if (connection.readTitle) {
+        try {
+          this.applySessionTitle(
+            this.session(id),
+            await connection.readTitle(native.threadId),
+          );
+        } catch {
+          // Codex closes its metadata connection before the native TUI runs.
+          needsTitleSync = true;
+        }
+      }
+      completed = true;
       return this.session(id);
     } catch (error) {
       this.failed(id, error);
       throw error;
     } finally {
       await connection?.close();
+      if (completed && needsTitleSync)
+        void this.syncSessionName(id).catch(() => {
+          // The stored title remains usable when the provider cannot report it.
+        });
     }
   }
 
@@ -557,6 +701,8 @@ export class Application {
         "This session is already open in another agentos instance",
       );
     let connection: ProviderConnection | undefined;
+    let completed = false;
+    let needsTitleSync = false;
     try {
       connection = await this.providers.adapter(row.provider).connect(cwd);
       await connection.resume(row.nativeThreadId);
@@ -576,12 +722,28 @@ export class Application {
           ),
         handoff,
       );
+      if (connection.readTitle) {
+        try {
+          this.applySessionTitle(
+            this.session(id),
+            await connection.readTitle(row.nativeThreadId),
+          );
+        } catch {
+          // Codex closes its metadata connection before the native TUI runs.
+          needsTitleSync = true;
+        }
+      }
+      completed = true;
       return this.session(id);
     } catch (error) {
       this.failed(id, error);
       throw error;
     } finally {
       await connection?.close();
+      if (completed && needsTitleSync)
+        void this.syncSessionName(id).catch(() => {
+          // The stored title remains usable when the provider cannot report it.
+        });
     }
   }
 

@@ -1,3 +1,4 @@
+import { BRAND } from "../constants";
 import { clip, colors } from "../theme";
 import type { ListRowData } from "../types";
 export function SectionHeader({
@@ -22,7 +23,7 @@ export function SectionHeader({
         overflow="hidden"
       >
         <text fg={colors.accent}>◈</text>
-        <text fg={colors.dim}>{" agentos"}</text>
+        <text fg={colors.dim}>{` ${BRAND}`}</text>
         <text fg={colors.faint}>{"  /  "}</text>
         <text fg={colors.text} wrapMode="none">
           <b>{title}</b>

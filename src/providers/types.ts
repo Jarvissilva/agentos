@@ -40,8 +40,14 @@ export type InteractiveRunner = (
 ) => Promise<number>;
 
 export interface ProviderConnection {
-  create(cwd: string, options?: SessionOptions): Promise<NativeThread>;
+  create(
+    cwd: string,
+    options?: SessionOptions,
+    title?: string,
+  ): Promise<NativeThread>;
   models?(): Promise<ModelCatalog>;
+  readTitle?(threadId: string): Promise<string | null>;
+  rename?(threadId: string, title: string): Promise<void>;
   resume(threadId: string): Promise<void>;
   launch(
     threadId: string,

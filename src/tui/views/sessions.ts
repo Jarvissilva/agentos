@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { sessionLabel } from "../../core/session-title";
 import { relativeTime, sessionMark } from "../theme";
 import type { Command, ResourceContext, ResourceView, Row } from "../types";
 import { resourceForms } from "./forms";
@@ -43,6 +43,28 @@ export function sessionsView(context: ResourceContext): ResourceView {
       },
     });
   };
+  const renameForm = (id: string) => {
+    const session = app.session(id);
+    const project = session.projectId
+      ? projectById.get(session.projectId)
+      : undefined;
+    openForm({
+      title: "Rename session",
+      subtitle: "The provider session and AgentOS label stay in sync",
+      fields: [
+        {
+          label: "Session title",
+          value: session.title ?? sessionLabel(session, project?.name),
+        },
+      ],
+      save: async (values) => {
+        await app.renameSession(id, values[0] ?? "");
+        setForm(null);
+        setNotice("Session renamed");
+        refresh();
+      },
+    });
+  };
   const showHistory = (id: string) => {
     void perform(async () => {
       const history = await app.history(id);
@@ -78,7 +100,7 @@ export function sessionsView(context: ResourceContext): ResourceView {
       const mark = sessionMark(session.status);
       return {
         id: session.id,
-        name: project?.name ?? basename(session.cwd),
+        name: sessionLabel(session, project?.name),
         meta: session.status,
         glyph: mark.glyph,
         glyphColor: mark.color,
@@ -121,12 +143,20 @@ export function sessionsView(context: ResourceContext): ResourceView {
     rows: sessionRows,
     commands: (row) => {
       const contextCommands: Command[] = [];
-      contextCommands.push({
-        name: "project",
-        description: "Assign, change, or clear the project group",
-        group: "context",
-        run: () => membershipForm("sessions", row.id),
-      });
+      contextCommands.push(
+        {
+          name: "rename",
+          description: `Rename ${row.name}`,
+          group: "context",
+          run: () => renameForm(row.id),
+        },
+        {
+          name: "project",
+          description: "Assign, change, or clear the project group",
+          group: "context",
+          run: () => membershipForm("sessions", row.id),
+        },
+      );
       contextCommands.push(
         {
           name: "instructions",

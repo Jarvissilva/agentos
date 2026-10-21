@@ -21,7 +21,7 @@ test("hero opens sections from slash commands, creates a project, and stays usab
     flushSync(() => root.render(<App app={f.app} />));
     await screen.flush();
     const home = screen.captureCharFrame();
-    expect(home).toContain("agentos");
+    expect(home).toContain("AgentOS");
     expect(home).toContain("Your local agent workspace");
     expect(home).toContain("What would you like to work on?");
     expect(home).toContain("commands");
@@ -61,6 +61,41 @@ test("hero opens sections from slash commands, creates a project, and stays usab
     screen.resize(50, 12);
     await screen.flush();
     expect(screen.captureCharFrame()).toContain("Resize the terminal");
+  } finally {
+    root.unmount();
+    await screen.dispose();
+    f.close();
+  }
+});
+
+test("opening the slash palette does not resize or move the globe", async () => {
+  const f = fixture();
+  const screen = await createTestRenderer({ width: 100, height: 40 });
+  const root = createRoot(screen.renderer);
+  const bounds = (frame: string) => {
+    const rows = frame.split("\n");
+    let top = Infinity;
+    let left = Infinity;
+    let right = -1;
+    rows.forEach((line, y) => {
+      if (y < 4) return;
+      for (const [x, char] of [...line].entries()) {
+        if (char !== "█" && char !== "•") continue;
+        top = Math.min(top, y);
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+      }
+    });
+    return { top, left, right };
+  };
+  try {
+    flushSync(() => root.render(<App app={f.app} />));
+    await screen.flush();
+    const home = bounds(screen.captureCharFrame());
+    flushSync(() => screen.mockInput.pressKey("/"));
+    await screen.flush();
+    expect(screen.captureCharFrame()).toContain("/settings");
+    expect(bounds(screen.captureCharFrame())).toEqual(home);
   } finally {
     root.unmount();
     await screen.dispose();
@@ -424,6 +459,63 @@ test("project details filter grouped work and slash project clears automation me
     await run("home");
     await run("automations");
     expect(screen.captureCharFrame()).toContain("unrelated-job");
+  } finally {
+    root.unmount();
+    await screen.dispose();
+    f.close();
+  }
+});
+
+test("r renames the selected session and refreshes the session list", async () => {
+  const f = fixture();
+  f.storage.db
+    .insert(sessions)
+    .values({
+      id: "renamable-session",
+      provider: "codex",
+      providerVersion: "test",
+      cwd: f.root,
+      title: "Original title",
+      status: "idle",
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    .run();
+  const screen = await createTestRenderer({ width: 110, height: 40 });
+  const root = createRoot(screen.renderer);
+  const press = (key: string) =>
+    flushSync(() => screen.mockInput.pressKey(key));
+  const type = (text: string) =>
+    flushSync(() => {
+      for (const char of text) screen.mockInput.pressKey(char);
+    });
+  const enter = () => flushSync(() => screen.mockInput.pressEnter());
+  try {
+    flushSync(() => root.render(<App app={f.app} />));
+    await screen.flush();
+    press("/");
+    await screen.flush();
+    type("sessions");
+    enter();
+    await screen.flush();
+    expect(screen.captureCharFrame()).toContain("Original title");
+    press("r");
+    await screen.flush();
+    expect(screen.captureCharFrame()).toContain("Rename session");
+    flushSync(() => screen.mockInput.pressKey("u", { ctrl: true }));
+    type("Renamed from r");
+    enter();
+    await screen.flush();
+    const deadline = Date.now() + 2000;
+    while (
+      !screen.captureCharFrame().includes("Renamed from r") &&
+      Date.now() < deadline
+    ) {
+      await Bun.sleep(20);
+      await screen.flush();
+    }
+    expect(f.app.session("renamable-session").title).toBe("Renamed from r");
+    expect(screen.captureCharFrame()).toContain("Renamed from r");
   } finally {
     root.unmount();
     await screen.dispose();

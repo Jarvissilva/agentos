@@ -11,7 +11,12 @@ import { fixture } from "./helpers";
 class FakeProviders extends ProviderManager {
   calls: { id: string; cwd: string; prompt?: string }[] = [];
   createOptions: (SessionOptions | undefined)[] = [];
+  createTitles: (string | undefined)[] = [];
   launchOptions: (SessionOptions | undefined)[] = [];
+  renamed: { threadId: string; title: string }[] = [];
+  providerTitle: string | null = null;
+  supportsRename = true;
+  supportsTitle = true;
   closed = 0;
   exitCode = 0;
   failResume = false;
@@ -31,10 +36,26 @@ class FakeProviders extends ProviderManager {
       },
       async connect(): Promise<ProviderConnection> {
         return {
-          async create(_cwd, options) {
+          async create(_cwd, options, title) {
             manager.createOptions.push(options);
+            manager.createTitles.push(title);
             return { threadId: "native-thread", sessionId: "native-session" };
           },
+          ...(manager.supportsTitle
+            ? {
+                async readTitle() {
+                  return manager.providerTitle;
+                },
+              }
+            : {}),
+          ...(manager.supportsRename
+            ? {
+                async rename(threadId: string, title: string) {
+                  manager.renamed.push({ threadId, title });
+                  manager.providerTitle = title;
+                },
+              }
+            : {}),
           async resume() {
             if (manager.failResume) throw new Error("Native history missing");
           },
@@ -92,12 +113,15 @@ test("new session saves native identity before handoff and resume keeps identity
     async (run) => {
       const pending = f.app.listSessions()[0];
       expect(pending?.nativeThreadId).toBe("native-thread");
+      expect(pending?.title).toBe("Review the code");
       expect(pending?.status).toBe("attached");
       return run();
     },
   );
   expect(session.status).toBe("idle");
   expect(session.nativeSessionId).toBe("native-session");
+  expect(session.title).toBe("Review the code");
+  expect(providers.createTitles[0]).toBe("Review the code");
   expect(providers.calls[0]?.cwd).toBe(f.root);
   expect(providers.calls[0]?.prompt).toContain(
     "Follow repository instructions.",
@@ -118,6 +142,49 @@ test("project and agent are optional", async () => {
   const session = await f.app.newSession({ cwd: f.root });
   expect(session.projectId).toBeNull();
   expect(session.agentId).toBeNull();
+  expect(session.title).toBeNull();
+  expect(providers.createTitles[0]).toBeUndefined();
+});
+
+test("rename writes the normalized title through and provider names win during sync", async () => {
+  const session = await f.app.newSession({
+    cwd: f.root,
+    prompt: "  First   prompt\nwith whitespace  ",
+  });
+  expect(session.title).toBe("First prompt with whitespace");
+  expect(providers.createTitles[0]).toBe("First prompt with whitespace");
+  const renamed = await f.app.renameSession(session.id, "  New\n title  ");
+  expect(renamed.title).toBe("New title");
+  expect(providers.renamed).toEqual([
+    { threadId: "native-thread", title: "New title" },
+  ]);
+  await expect(f.app.renameSession(session.id, "   ")).rejects.toThrow(
+    "cannot be empty",
+  );
+  expect(providers.renamed).toHaveLength(1);
+
+  providers.providerTitle = "Provider title";
+  expect(await f.app.syncSessionNames()).toBe(1);
+  expect(f.app.session(session.id).title).toBe("Provider title");
+  expect(await f.app.syncSessionNames()).toBe(0);
+
+  providers.providerTitle = "   ";
+  expect(await f.app.syncSessionNames()).toBe(0);
+  expect(f.app.session(session.id).title).toBe("Provider title");
+});
+
+test("providers without native title support keep local-only names", async () => {
+  providers.supportsRename = false;
+  providers.supportsTitle = false;
+  const session = await f.app.newSession({
+    cwd: f.root,
+    prompt: "Local title",
+  });
+  const renamed = await f.app.renameSession(session.id, "Renamed locally");
+  expect(renamed.title).toBe("Renamed locally");
+  expect(providers.renamed).toHaveLength(0);
+  expect(await f.app.syncSessionNames()).toBe(0);
+  expect(f.app.session(session.id).title).toBe("Renamed locally");
 });
 
 test("native failures persist error and identity and always clean up", async () => {

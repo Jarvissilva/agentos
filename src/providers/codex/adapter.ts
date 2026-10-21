@@ -19,7 +19,11 @@ import { CodexRpc } from "./rpc";
 const threadResponse = z.object({
   model: z.string().optional(),
   reasoningEffort: z.string().nullish(),
-  thread: z.object({ id: z.string().min(1), sessionId: z.string().min(1) }),
+  thread: z.object({
+    id: z.string().min(1),
+    sessionId: z.string().min(1),
+    name: z.string().nullish(),
+  }),
 });
 
 export class CodexAdapter implements ProviderAdapter {
@@ -141,7 +145,7 @@ export class CodexAdapter implements ProviderAdapter {
       return {
         models: () =>
           codexModels((method, params) => client.request(method, params)),
-        async create(cwd, options) {
+        async create(cwd, options, title) {
           const result = threadResponse.parse(
             await client.request("thread/start", {
               cwd,
@@ -163,16 +167,34 @@ export class CodexAdapter implements ProviderAdapter {
             throw new Error(
               `Codex rejected configured reasoning effort: ${options.reasoning}`,
             );
-          // Naming materializes the native rollout before another client (the
-          // official TUI) resumes it. An unnamed empty thread is memory-only.
-          await client.request("thread/name/set", {
-            threadId: result.thread.id,
-            name: `agentos · ${new Date().toISOString()}`,
-          });
+          if (title) {
+            // Naming materializes the native rollout before another client (the
+            // official TUI) resumes it. An unnamed empty thread is memory-only.
+            await client.request("thread/name/set", {
+              threadId: result.thread.id,
+              name: title,
+            });
+          } else {
+            // Materialize a session created without a prompt without inventing
+            // a synthetic name. Codex can assign its own title after the first turn.
+            await client.request("thread/section/move", {
+              threadId: result.thread.id,
+              sectionId: null,
+            });
+          }
           return {
             threadId: result.thread.id,
             sessionId: result.thread.sessionId,
           };
+        },
+        async readTitle(threadId) {
+          const result = threadResponse.parse(
+            await client.request("thread/read", { threadId }),
+          );
+          return result.thread.name ?? null;
+        },
+        async rename(threadId, name) {
+          await client.request("thread/name/set", { threadId, name });
         },
         async resume(threadId) {
           threadResponse.parse(

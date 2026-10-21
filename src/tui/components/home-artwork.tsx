@@ -1,6 +1,9 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { useMemo } from "react";
 import { colors } from "../theme";
+import { useTicker } from "./motion";
+
+const STAR_TICK_MS = 140;
 
 function random(seed: number) {
   let value = seed >>> 0;
@@ -10,122 +13,57 @@ function random(seed: number) {
   };
 }
 
+interface Star {
+  char: string;
+  id: number;
+  phase: number;
+  speed: number;
+  x: number;
+  y: number;
+}
+
 function starfield(width: number, height: number) {
   const next = random(width * 7919 + height * 104729 + 17);
-  const stars: { x: number; y: number; char: string; color: string }[] = [];
-  const count = Math.max(14, Math.min(34, Math.round((width * height) / 150)));
-  const center = width / 2;
+  const stars: Star[] = [];
+  const count = Math.max(16, Math.min(42, Math.round((width * height) / 170)));
+  const minY = 4;
+  const maxY = height - 12;
+  if (maxY <= minY) return stars;
   let placed = 0;
   let attempts = 0;
-  while (placed < count && attempts < count * 10) {
+  while (placed < count && attempts < count * 12) {
     attempts++;
-    const x = 1 + Math.floor(next() * Math.max(1, width - 2));
-    const y = 1 + Math.floor(next() * Math.max(1, height - 12));
-    const clearBand =
-      Math.abs(x - center) < width * 0.36 && y >= 4 && y <= height - 13;
-    if (clearBand) continue;
+    const x = 2 + Math.floor(next() * Math.max(1, width - 4));
+    const y = minY + Math.floor(next() * Math.max(1, maxY - minY));
     const bright = next();
     stars.push({
+      char: bright > 0.9 ? "+" : bright > 0.58 ? "·" : "˙",
+      id: placed,
+      phase: next() * Math.PI * 2,
+      speed: 0.06 + next() * 0.22,
       x,
       y,
-      char: bright > 0.88 ? "+" : bright > 0.55 ? "·" : "˙",
-      color:
-        bright > 0.88
-          ? colors.starBright
-          : bright > 0.55
-            ? colors.star
-            : colors.faint,
     });
     placed++;
   }
   return stars;
 }
 
-interface Segment {
-  id: number;
-  text: string;
-  color: string;
+interface BackdropProps {
+  active?: boolean;
+  dimmed?: boolean;
 }
 
-function planetRows(width: number, height: number) {
-  const rows: { y: number; segments: Segment[] }[] = [];
-  let segmentId = 0;
-  const dome = Math.max(3, Math.min(5, Math.floor(height / 7)));
-  const top = Math.max(2, height - dome - 3);
-  const center = width / 2;
-  for (let y = 0; y < height; y++) {
-    const chars: string[] = [];
-    const colorsAt: (string | null)[] = [];
-    for (let x = 0; x < width; x++) {
-      const offset = (x - center + 0.5) / center;
-      const edge = top + Math.round(dome * offset * offset);
-      let char = " ";
-      let color: string | null = null;
-      if (y >= edge) {
-        if (y === edge) {
-          char = "▄";
-          color = colors.rim;
-        } else if (y === edge + 1) {
-          char = "█";
-          color = colors.rimSoft;
-        } else if (y === edge + 2) {
-          char = "█";
-          color = colors.planet;
-        } else {
-          char = "█";
-          color = y >= height - 2 ? "#06101a" : "#091624";
-        }
-      } else if (y === edge - 1 && x % 3 === 0) {
-        char = "·";
-        color = colors.atmosphere;
-      }
-      chars.push(char);
-      colorsAt.push(color);
-    }
-    const segments: Segment[] = [];
-    let text = "";
-    let current: string | null = null;
-    for (let x = 0; x < width; x++) {
-      const color = colorsAt[x] ?? null;
-      if (color !== current && text) {
-        segments.push({
-          id: segmentId++,
-          text,
-          color: current ?? colors.bg,
-        });
-        text = "";
-      }
-      current = color;
-      text += chars[x] ?? " ";
-    }
-    if (text)
-      segments.push({
-        id: segmentId++,
-        text,
-        color: current ?? colors.bg,
-      });
-    rows.push({ y, segments });
-  }
-  return rows;
-}
-
-export function Backdrop() {
+export function Backdrop({
+  active = true,
+  dimmed = false,
+}: BackdropProps = {}) {
   const { width, height } = useTerminalDimensions();
-  const stars = useMemo(() => starfield(width, height), [width, height]);
-  const planet = useMemo(() => planetRows(width, height), [width, height]);
-  const grid = useMemo(() => {
-    const rows: { y: number; line: string }[] = [];
-    if (height < 22) return rows;
-    const center = width / 2;
-    for (let y = 8; y < height - 12; y += 3) {
-      let line = "";
-      for (let x = 0; x < width; x++)
-        line += x % 9 === 4 && Math.abs(x - center) >= width * 0.36 ? "·" : " ";
-      rows.push({ y, line });
-    }
-    return rows;
-  }, [width, height]);
-
+  const tick = useTicker(STAR_TICK_MS, active);
+  const stars = useMemo(() => starfield(width, height), [height, width]);
+  const palette = dimmed
+    ? [colors.faint, colors.faint, colors.star, colors.starBright]
+    : [colors.faint, colors.star, colors.starBright, colors.accent];
   return (
     <box
       position="absolute"
@@ -137,47 +75,21 @@ export function Backdrop() {
       backgroundColor={colors.bg}
       overflow="hidden"
     >
-      {grid.map((row) => (
-        <text
-          key={`grid-${row.y}`}
-          position="absolute"
-          top={row.y}
-          left={0}
-          fg={colors.grid}
-          wrapMode="none"
-        >
-          {row.line}
-        </text>
-      ))}
-      {stars.map((star) => (
-        <text
-          key={`star-${star.x}-${star.y}-${star.char}`}
-          position="absolute"
-          top={star.y}
-          left={star.x}
-          fg={star.color}
-        >
-          {star.char}
-        </text>
-      ))}
-      {planet.map((row) => (
-        <box
-          key={`planet-${row.y}`}
-          position="absolute"
-          top={row.y}
-          left={0}
-          width={width}
-          height={1}
-        >
-          <text wrapMode="none">
-            {row.segments.map((segment) => (
-              <span key={segment.id} fg={segment.color}>
-                {segment.text}
-              </span>
-            ))}
+      {stars.map((star) => {
+        const wave = Math.sin(tick * star.speed + star.phase);
+        const level = wave > 0.85 ? 3 : wave > 0.15 ? 2 : wave > -0.35 ? 1 : 0;
+        return (
+          <text
+            key={star.id}
+            position="absolute"
+            top={star.y}
+            left={star.x}
+            fg={palette[level] ?? colors.faint}
+          >
+            {star.char}
           </text>
-        </box>
-      ))}
+        );
+      })}
     </box>
   );
 }

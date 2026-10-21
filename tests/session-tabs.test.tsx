@@ -143,6 +143,44 @@ test("tabs preserve independent drafts, launch context, and forms across keyboar
   }
 });
 
+test("tab labels use the session title and refresh when a session is renamed", async () => {
+  const input = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+  const output = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+  Object.defineProperty(process.stdin, "isTTY", {
+    configurable: true,
+    value: true,
+  });
+  Object.defineProperty(process.stdout, "isTTY", {
+    configurable: true,
+    value: true,
+  });
+  const f = await setup();
+  try {
+    await f.type("Tab title task");
+    await f.enter();
+    await f.until(() =>
+      f.screen.captureCharFrame().includes("PROVIDER:Tab title task"),
+    );
+    await f.key("F2");
+    expect(f.screen.captureCharFrame()).toContain("codex · Tab title task");
+    const session = f.app.listSessions()[0];
+    expect(session?.title).toBe("Tab title task");
+    if (!session) throw new Error("Session was not created");
+    await f.app.renameSession(session.id, "Renamed tab");
+    await f.screen.flush();
+    await f.until(() =>
+      f.screen.captureCharFrame().includes("codex · Renamed tab"),
+    );
+  } finally {
+    await f.closeUI();
+    f.close();
+    if (input) Object.defineProperty(process.stdin, "isTTY", input);
+    else Reflect.deleteProperty(process.stdin, "isTTY");
+    if (output) Object.defineProperty(process.stdout, "isTTY", output);
+    else Reflect.deleteProperty(process.stdout, "isTTY");
+  }
+});
+
 test("provider UIs remain live in separate tabs; switching routes input and quitting settles attachments", async () => {
   const input = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
   const output = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");

@@ -26,9 +26,6 @@ export function CommandBox({
       <box
         width={width}
         height={3}
-        border
-        borderStyle="rounded"
-        borderColor={focused ? colors.accentDim : colors.lineBright}
         backgroundColor={colors.panel}
         flexDirection="row"
         alignItems="center"

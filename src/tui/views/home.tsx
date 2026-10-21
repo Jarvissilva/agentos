@@ -5,12 +5,12 @@ import type { ProviderId, ProviderInfo } from "../../providers/types";
 import {
   Backdrop,
   CommandBox,
+  Globe,
   Hints,
-  Logo,
   Palette,
   Wordmark,
 } from "../components";
-import { clip, colors, prettyPath } from "../theme";
+import { colors, prettyPath } from "../theme";
 import type { Command, FormSpec, PaletteItem, Picker } from "../types";
 
 interface HomeProps {
@@ -72,8 +72,39 @@ export function Home({
   const width = terminalWidth;
   const height = terminalHeight;
   const commandWidth = Math.max(44, Math.min(72, width - 12));
-  const paletteRows = Math.max(2, Math.min(7, height - 23));
+  const paletteRows = Math.max(2, Math.min(7, height - 25));
   const paletteVisible = active && (commandOpen || picker !== null);
+  const providerLabel = selectedProvider
+    ? `${selectedProvider} ▾${selectedProviderInfo?.interactive ? "" : " (unavailable)"}`
+    : detecting
+      ? "Detecting providers…"
+      : "No provider available";
+  const directoryLabel = prettyPath(homeDirectory);
+  const detailItems = [
+    {
+      id: "provider",
+      text: providerLabel,
+      color: selectedProviderInfo?.interactive ? colors.accent : colors.warning,
+    },
+    { id: "directory", text: directoryLabel, color: colors.muted },
+    ...(composeAgent
+      ? [{ id: "agent", text: composeAgent.name, color: colors.muted }]
+      : []),
+    ...(composeProject
+      ? [{ id: "project", text: composeProject.name, color: colors.muted }]
+      : []),
+    ...(modelSummary
+      ? [{ id: "model", text: modelSummary, color: colors.muted }]
+      : []),
+  ];
+  const detailText = detailItems.map((item) => item.text).join("  ·  ");
+  const detailWidth = Math.max(
+    24,
+    Math.min(width - 4, Math.max(commandWidth, 96)),
+  );
+  const detailRows = Math.max(1, Math.ceil(detailText.length / detailWidth));
+  // The palette overlays the artwork; only the persistent footer reserves space.
+  const globeInsetBottom = 9 + detailRows;
   return (
     <box
       width="100%"
@@ -82,99 +113,116 @@ export function Home({
       flexDirection="column"
       overflow="hidden"
     >
-      <Backdrop />
+      <Backdrop active={active} dimmed={paletteVisible} />
+      <Globe
+        active={active}
+        dimmed={paletteVisible}
+        insetTop={4}
+        insetBottom={globeInsetBottom}
+      />
       <box
         flexGrow={1}
+        width="100%"
         flexDirection="column"
         alignItems="center"
-        justifyContent="center"
-        paddingLeft={2}
-        paddingRight={2}
-        paddingBottom={Math.min(7, Math.max(0, Math.floor(height / 5)))}
-        zIndex={1}
+        overflow="hidden"
+        zIndex={2}
       >
-        {height >= 26 ? <Logo /> : null}
-        <box marginTop={height >= 26 ? 1 : 0}>
-          <Wordmark />
+        <box marginTop={1} flexShrink={0}>
+          <Wordmark active={active} />
         </box>
-        <box marginTop={2} width="100%" alignItems="center">
-          <CommandBox
-            key={
-              active && picker
-                ? "provider-search"
-                : active && commandOpen
-                  ? "command-search"
-                  : "message-draft"
-            }
-            variant="hero"
-            width={commandWidth}
-            value={paletteVisible ? input : draft}
-            prefix={active && commandOpen}
-            placeholder={
-              active && picker
-                ? "Filter providers…"
-                : active && commandOpen
-                  ? "Type a command…"
-                  : "What would you like to work on?"
-            }
-            focused={active && !busy}
-            paletteOpen={paletteVisible}
-            onInput={(value) => {
-              if (!active) return;
-              if (paletteVisible) {
-                setInput(value);
-                setMenuSelected(0);
-              } else if (value.startsWith("/")) {
-                setInput(value);
-                setMenuSelected(0);
-                setCommandOpen(true);
-              } else updateDraft(value);
-            }}
-            onSubmit={() => {
-              if (active) submitHome();
-            }}
-          />
-        </box>
-        <box width={commandWidth} height={1} marginTop={1} overflow="hidden">
-          <text wrapMode="none">
-            <span
-              fg={
-                selectedProviderInfo?.interactive
-                  ? colors.accent
-                  : colors.warning
-              }
-            >
-              {selectedProvider
-                ? `${selectedProvider} ▾${selectedProviderInfo?.interactive ? "" : " (unavailable)"}`
-                : detecting
-                  ? "Detecting providers…"
-                  : "No provider available"}
-            </span>
-            <span
-              fg={colors.muted}
-            >{`   ${clip(prettyPath(homeDirectory), Math.max(12, commandWidth - 38))}   ${composeAgent?.name ?? "No agent"}   ${composeProject?.name ?? "No project"}`}</span>
-          </text>
-        </box>
-        <box width={commandWidth} height={1} overflow="hidden">
-          <text fg={colors.muted} wrapMode="none">
-            {modelSummary ?? ""}
-          </text>
-        </box>
-        {paletteVisible ? (
-          <box marginTop={1} width="100%" alignItems="center" flexShrink={0}>
-            <Palette
-              items={picker ? paletteProviders : paletteCommands}
-              selected={picker ? safeProvider : safeMenu}
-              title={picker?.title}
-              slash={!picker}
-              width={commandWidth}
-              maxRows={paletteRows}
-              empty={picker ? "No providers match" : "No commands match"}
-            />
+        <box flexGrow={1} width="100%" />
+        <box
+          flexDirection="column"
+          alignItems="center"
+          width="100%"
+          paddingBottom={1}
+          flexShrink={0}
+        >
+          <box width={commandWidth} flexDirection="column">
+            {paletteVisible ? (
+              <box
+                marginTop={1}
+                width="100%"
+                alignItems="center"
+                flexShrink={0}
+              >
+                <Palette
+                  items={picker ? paletteProviders : paletteCommands}
+                  selected={picker ? safeProvider : safeMenu}
+                  title={picker?.title}
+                  slash={!picker}
+                  width={commandWidth}
+                  maxRows={paletteRows}
+                  empty={picker ? "No providers match" : "No commands match"}
+                />
+              </box>
+            ) : null}
+            <box marginTop={1} width="100%">
+              <CommandBox
+                key={
+                  active && picker
+                    ? "provider-search"
+                    : active && commandOpen
+                      ? "command-search"
+                      : "message-draft"
+                }
+                variant="hero"
+                width={commandWidth}
+                value={paletteVisible ? input : draft}
+                prefix={active && commandOpen}
+                placeholder={
+                  active && picker
+                    ? "Filter providers…"
+                    : active && commandOpen
+                      ? "Type a command…"
+                      : "What would you like to work on?"
+                }
+                focused={active && !busy}
+                paletteOpen={paletteVisible}
+                onInput={(value) => {
+                  if (!active) return;
+                  if (paletteVisible) {
+                    setInput(value);
+                    setMenuSelected(0);
+                  } else if (value.startsWith("/")) {
+                    setInput(value);
+                    setMenuSelected(0);
+                    setCommandOpen(true);
+                  } else updateDraft(value);
+                }}
+                onSubmit={() => {
+                  if (active) submitHome();
+                }}
+              />
+            </box>
           </box>
-        ) : null}
-        {(paletteVisible === false || height >= 26) && (
-          <box marginTop={2} width="100%">
+          <box
+            width={detailWidth}
+            marginTop={1}
+            alignItems="center"
+            flexShrink={0}
+          >
+            <text width="100%" wrapMode="char" textAlign="center">
+              {detailItems.map((item, index) => (
+                <span key={item.id}>
+                  {index > 0 ? <span fg={colors.faint}>{"  ·  "}</span> : null}
+                  <span fg={item.color}>{item.text}</span>
+                </span>
+              ))}
+            </text>
+          </box>
+          <box width={commandWidth} flexDirection="column">
+            <box width="100%" height={1} marginTop={1} overflow="hidden">
+              <text
+                fg={
+                  error ? colors.error : busy ? colors.accent : colors.success
+                }
+                wrapMode="none"
+              >
+                {active ? error || (busy ? "Working…" : notice) : ""}
+              </text>
+            </box>
             <Hints
               items={[
                 { key: "/", label: "commands" },
@@ -183,14 +231,6 @@ export function Home({
               ]}
             />
           </box>
-        )}
-        <box height={1} marginTop={1} width={commandWidth}>
-          <text
-            fg={error ? colors.error : busy ? colors.accent : colors.success}
-            wrapMode="none"
-          >
-            {active ? error || (busy ? "Working…" : notice) : ""}
-          </text>
         </box>
       </box>
     </box>

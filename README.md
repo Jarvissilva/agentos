@@ -19,7 +19,7 @@ Restart an already-open agentos instance to load newly added modules.
 
 ## Terminal interface
 
-agentos opens on a centered home screen with a message input. Type a task and press Enter to start a native provider session with that message. The selected provider, model and reasoning defaults, working directory, agent, and project appear beneath the input. Use `/provider` to choose an available provider; the last choice is remembered in `$XDG_CONFIG_HOME/agentos/preferences.json`. Without a saved choice, agentos prefers Codex when available, then the first available provider. An unavailable saved provider stays visible until you choose another.
+agentos opens on a centered home screen with a message input. Type a task and press Enter to start a native provider session with that message. The first message also seeds a short session title (up to 60 characters), shown in Sessions and tab labels. Provider-native names remain authoritative and are synchronized with AgentOS; renames in AgentOS are written back to Codex and OpenCode. The selected provider, model and reasoning defaults, working directory, agent, and project appear beneath the input. Use `/provider` to choose an available provider; the last choice is remembered in `$XDG_CONFIG_HOME/agentos/preferences.json`. Without a saved choice, agentos prefers Codex when available, then the first available provider. An unavailable saved provider stays visible until you choose another.
 
 Use `/directory`, `/agent`, and `/project` on the home screen to configure the next session. Directory starts from the saved default, or where agentos was launched; agent and project default to none. The home context selections belong to each session tab and last for the current application instance. Use `/settings` to change persistent defaults. Resource lists, details, creation forms, and the session wizard open as centered modals over the home screen. Press `n` on Sessions, Projects, Agents, Skills, MCPs, or Automations to create an item. The shortcut is inactive in text inputs, selectors, and confirmation dialogs (`n` still cancels a confirmation). Every screen, resource, and action is reachable through the `/` command palette — there are no sidebar tabs or page-specific shortcuts to memorize. Press `/` in an empty home input, or Ctrl+P while drafting, to open the palette, type to filter commands by name or description, and press Enter to run the highlighted command. Commands prioritize exact names and name prefixes; otherwise actions for the item currently selected appear first. Closing commands, switching providers, or a launch error preserves your message. Slashes inside a message (such as paths) remain ordinary text. Empty messages do not launch sessions.
 
@@ -33,6 +33,7 @@ Use `/directory`, `/agent`, and `/project` on the home screen to configure the n
 | Enter | Send the home message / run a command / open a row |
 | Esc | Close the palette, cancel a form, or go back |
 | `n` | Create an item in the current resource modal |
+| `r` | Rename the selected session in Sessions |
 | Tab | Next field in a form |
 | `y` / `n` | Confirm / cancel a destructive action |
 | Ctrl+S | Save a form, including Markdown/YAML editors |
@@ -44,7 +45,7 @@ Commands include:
 
 | Group | Commands |
 | --- | --- |
-| Context | Home: `/directory`, `/agent`, `/project`; resources: `/project`, `/open`, `/resume`, `/history`, `/edit`, `/instructions`, `/delete`, `/install`, `/uninstall`, `/disable`, `/run`, `/runs`, `/toggle`, `/cancel`, `/retry` |
+| Context | Home: `/directory`, `/agent`, `/project`; resources: `/rename`, `/project`, `/open`, `/resume`, `/history`, `/edit`, `/instructions`, `/delete`, `/install`, `/uninstall`, `/disable`, `/run`, `/runs`, `/toggle`, `/cancel`, `/retry` |
 | Create | `/new project`, `/new agent`, `/new skill`, `/new mcp`, `/new automation`, `/new session`, `/import agent\|skill\|mcp\|automation` |
 | Navigate | `/settings`, `/sessions`, `/projects`, `/automations`, `/agents`, `/skills`, `/mcps`, `/providers`, `/runs`, `/notifications` |
 | System | `/provider`, `/back`, `/home`, `/help`, `/refresh`, `/scheduler install`, `/scheduler status`, `/quit` |
@@ -60,7 +61,7 @@ Interactive sessions launched in the agentos TUI now open the provider’s own i
 - **Ctrl+T:** open a blank session tab; enter a task to launch its provider.
 - **Ctrl+1–9:** select a tab. **Alt+1–9** and **Ctrl+PageUp/PageDown** are alternatives when a terminal cannot distinguish Ctrl+number keys. Tabs can also be clicked.
 - **Ctrl+W:** close the tab and detach its terminal frontend. This does not delete its saved conversation or explicitly stop its background service.
-- **F2:** switch between the provider terminal and that tab’s agentos dashboard. Provider slash commands remain provider commands; open the dashboard to use agentos commands.
+- **F2:** switch between the provider terminal and that tab’s agentos dashboard. Provider slash commands remain provider commands; open the dashboard to use agentos commands. Opening the dashboard also synchronizes provider session names.
 - **Ctrl+Q:** quit agentos and disconnect embedded frontends. Codex and OpenCode use their native background services; agentos does not shut those services down. Continuation depends on those provider services being enabled and running, and pending approvals can still require your attention.
 
 A dot on an inactive tab indicates new terminal output, not confirmed task completion. Exited or disconnected terminals remain visible until closed. To reconnect after restarting agentos, open Sessions and use `/resume`; resuming a session already open in another tab selects that tab. Saved model defaults still apply only when creating a session.
@@ -81,6 +82,7 @@ agentos projects create Wizyz --description "AI website builder"
 agentos agents create Developer --instructions-file ./developer-instructions.md
 agentos sessions new --project Wizyz --cwd ~/projects/wizyz --agent Developer --provider codex
 agentos sessions list --project Wizyz
+agentos sessions rename <agentos-session-id> "Checkout fix"
 agentos sessions resume <agentos-session-id>
 agentos sessions history <agentos-session-id> --cursor '<nextCursor>'
 agentos sessions instructions <session-id> --edit
@@ -93,9 +95,9 @@ Roles are central Markdown files with `name`/`description` YAML frontmatter. The
 
 Provider behavior:
 
-- **Codex:** obtains exact IDs through a private App Server, persists an empty thread by setting its native name, closes the bootstrap server, then launches ordinary `codex resume`. Conversation retrieval uses native paginated thread history.
-- **OpenCode v2:** creates a native session with an explicit working directory through its installed API CLI, then opens its official TUI. Background execution uses a private native server and verifies the persisted `outcome`; it never assumes that stream EOF means success. Other major versions are rejected.
-- **Agy:** one harmless native headless initialization turn obtains a reliable conversation ID before launching its TUI. This can take time and uses native inference. History retrieval has no verified API and is explicitly unavailable; resume Agy to inspect its native history.
+- **Codex:** obtains exact IDs through a private App Server, persists the native thread by setting its name from the first prompt, closes the bootstrap server, then launches ordinary `codex resume`. Promptless sessions are materialized without inventing a name so Codex can assign its own title after the first turn. Conversation retrieval uses native paginated thread history.
+- **OpenCode v2:** creates a native session through its installed API CLI with an explicit working directory and, when present, the first prompt as its title, then opens its official TUI. Background execution uses a private native server and verifies the persisted `outcome`; it never assumes that stream EOF means success. Other major versions are rejected.
+- **Agy:** one harmless native headless initialization turn obtains a reliable conversation ID before launching its TUI. Titles are stored in AgentOS only because Agy has no documented native session-name API. This can take time and uses native inference. History retrieval has no verified API and is explicitly unavailable; resume Agy to inspect its native history.
 
 Managed session status describes preparation/terminal attachment, not task completion. `idle` means the native TUI exited successfully; its native daemon may still be working. Conversations opened with native `/new` or `/fork` are not automatically imported. A process-identity guard prevents simultaneous managed attachment and recovers stale records after interruption.
 

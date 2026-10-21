@@ -3,6 +3,7 @@ export * from "./branding";
 export * from "./command-input";
 export * from "./confirmation";
 export * from "./form";
+export * from "./globe";
 export * from "./home-artwork";
 export * from "./keyboard-hints";
 export * from "./list";

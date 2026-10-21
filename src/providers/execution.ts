@@ -6,11 +6,11 @@ import type { ExecutionInput, ExecutionResult, ProviderId } from "./types";
 
 export const object = (value: unknown): Record<string, unknown> =>
   z.record(z.string(), z.unknown()).parse(value);
-export async function captureJson(
+export async function captureOutput(
   command: string,
   args: string[],
   cwd?: string,
-): Promise<unknown> {
+): Promise<string> {
   const p = Bun.spawn([command, ...args], {
     env: process.env,
     cwd,
@@ -30,6 +30,14 @@ export async function captureJson(
     throw new Error(
       `${command} native API failed (exit ${code}); inspect its native diagnostics`,
     );
+  return out;
+}
+export async function captureJson(
+  command: string,
+  args: string[],
+  cwd?: string,
+): Promise<unknown> {
+  const out = await captureOutput(command, args, cwd);
   try {
     return JSON.parse(out);
   } catch {

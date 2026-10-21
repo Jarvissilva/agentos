@@ -25,6 +25,11 @@ export const colors = {
   rim: "#bdd8f6",
   rimSoft: "#4d7399",
   planet: "#0b1a29",
+  globeDeep: "#0f283a",
+  globeBack: "#1b4560",
+  globeMid: "#347a9e",
+  globeLine: "#79c4e8",
+  globeHot: "#e8faff",
 } as const;
 
 export function clip(text: string, max: number) {

@@ -23,6 +23,7 @@ import { matchCommands, matches } from "./commands";
 import { Form, ModalSurface } from "./components";
 import { ResourceModal } from "./components/resource-modal";
 import { SessionTabs, type WorkspaceTabProps } from "./components/session-tabs";
+import { BRAND } from "./constants";
 import { useNewSession } from "./flows/new-session";
 import { colors, plural } from "./theme";
 import type {
@@ -202,6 +203,10 @@ function Workspace({
   };
 
   const openSection = (section: SectionKey, group?: GroupFilter) => {
+    if (section === "sessions")
+      void app.syncSessionNames().catch(() => {
+        // Provider title sync must never block opening the session list.
+      });
     setProjectFilter(group ?? null);
     setView({ kind: "section", section });
     setSelected(0);
@@ -645,13 +650,14 @@ function Workspace({
         void perform(async () => {
           setProviders(await app.detectProviders());
           app.recoverSessions();
+          await app.syncSessionNames();
           setNotice("Reloaded");
         });
       },
     },
     {
       name: "quit",
-      description: "Exit agentos",
+      description: `Exit ${BRAND}`,
       group: "system",
       run: () => renderer.destroy(),
     },
@@ -703,7 +709,7 @@ function Workspace({
       ? projectFilter?.name
       : undefined) ??
     (activeSection === "runs" ? runFilter?.name : undefined);
-  const headerTitle = activeCopy?.title ?? "agentos";
+  const headerTitle = activeCopy?.title ?? BRAND;
   const headerRight = `${plural(rows.length, activeCopy?.noun ?? "item")}${notificationsUnread && activeSection !== "notifications" ? `  ·  ${notificationsUnread} unread` : ""}`;
 
   const moveList = (delta: number) => {
@@ -881,6 +887,22 @@ function Workspace({
         key.preventDefault();
         runCommand(creationCommand);
         return;
+      }
+
+      if (
+        plain &&
+        key.name === "r" &&
+        activeSection === "sessions" &&
+        report === null
+      ) {
+        const rename = contextCommands.find(
+          (command) => command.name === "rename",
+        );
+        if (rename) {
+          key.preventDefault();
+          runCommand(rename);
+          return;
+        }
       }
 
       if (plain && (key.name === "left" || key.name === "h")) {
@@ -1068,7 +1090,7 @@ function Workspace({
 export async function startTui(app: Application) {
   if (!process.stdin.isTTY || !process.stdout.isTTY)
     throw new Error(
-      "agentos TUI requires an interactive terminal; use agentos --help for direct commands",
+      `${BRAND} TUI requires an interactive terminal; use agentos --help for direct commands`,
     );
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
   const root = createRoot(renderer);

@@ -1,4 +1,3 @@
-import { basename } from "node:path";
 import { type BoxRenderable, EmbeddedTerminalRenderable } from "@opentui/core";
 import {
   useKeyboard,
@@ -7,6 +6,7 @@ import {
 } from "@opentui/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { Application, SessionLauncher } from "../../core/application";
+import { sessionLabel } from "../../core/session-title";
 import {
   type EmbeddedCommand,
   EmbeddedProcess,
@@ -51,6 +51,7 @@ export function SessionTabs({
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const [activeId, setActiveId] = useState(1);
+  const [, setRevision] = useState(0);
   const activeRef = useRef(activeId);
   activeRef.current = activeId;
   const nextId = useRef(2);
@@ -74,6 +75,30 @@ export function SessionTabs({
       for (const child of processes.current.values()) child.disconnect();
     },
     [],
+  );
+  useEffect(
+    () =>
+      app.onSessionsChanged(() => {
+        setTabs((items) => {
+          let changed = false;
+          const next = items.map((tab) => {
+            if (!tab.invocation) return tab;
+            try {
+              const session = app.session(tab.invocation.session.id);
+              changed = true;
+              return {
+                ...tab,
+                invocation: { ...tab.invocation, session },
+              };
+            } catch {
+              return tab;
+            }
+          });
+          return changed ? next : items;
+        });
+        setRevision((value) => value + 1);
+      }),
+    [app],
   );
   const select = (id: number) => {
     setActiveId(id);
@@ -121,7 +146,12 @@ export function SessionTabs({
       if (tab) select(tab.id);
     } else if (key.name === "f2") {
       const tab = tabsRef.current.find((tab) => tab.id === activeRef.current);
-      if (tab?.invocation) update(tab.id, { dashboard: !tab.dashboard });
+      if (tab?.invocation) {
+        update(tab.id, { dashboard: !tab.dashboard });
+        void app.syncSessionNames().catch(() => {
+          // The dashboard remains usable when a provider title cannot be read.
+        });
+      }
     } else handled = false;
     if (handled) {
       key.preventDefault();
@@ -208,6 +238,17 @@ export function SessionTabs({
     Math.min(27, Math.floor((width - 2) / Math.min(tabs.length, 4))),
   );
   const capacity = Math.max(1, Math.floor((width - 2) / cellWidth));
+  const tabName = (session: Session) => {
+    let projectName: string | undefined;
+    try {
+      projectName = session.projectId
+        ? app.project(session.projectId).name
+        : undefined;
+    } catch {
+      projectName = undefined;
+    }
+    return sessionLabel(session, projectName);
+  };
   const activeIndex = Math.max(
     0,
     tabs.findIndex((tab) => tab.id === activeId),
@@ -237,7 +278,7 @@ export function SessionTabs({
               wrapMode="none"
             >
               {clip(
-                `${first + offset + 1} ${tab.invocation ? `${tab.invocation.session.provider} · ${basename(tab.invocation.session.cwd) || tab.invocation.session.cwd}` : "New session"}${tab.unread ? " •" : ""}${tab.ended ? " ○" : ""}`,
+                `${first + offset + 1} ${tab.invocation ? `${tab.invocation.session.provider} · ${tabName(tab.invocation.session)}` : "New session"}${tab.unread ? " •" : ""}${tab.ended ? " ○" : ""}`,
                 cellWidth - 1,
               )}
             </text>

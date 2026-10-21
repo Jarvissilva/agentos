@@ -1,6 +1,9 @@
+import { BRAND } from "../constants";
+import { colors } from "../theme";
+import { mixHex, useTicker } from "./motion";
+
 const logoShades = ["#7e9dc0", "#5c799a", "#3d5775", "#293b50", "#1a2637"];
 
-import { colors } from "../theme";
 export function Logo() {
   return (
     <box flexDirection="column" alignItems="center">
@@ -17,11 +20,18 @@ export function Logo() {
   );
 }
 
-export function Wordmark() {
+export function Wordmark({ active = true }: { active?: boolean } = {}) {
+  const tick = useTicker(120, active);
+  const pulse = 0.5 + 0.5 * Math.sin(tick * 0.09);
   return (
     <box flexDirection="column" alignItems="center">
-      <text fg={colors.accentBright}>
-        <b>agentos</b>
+      <text>
+        <span fg={mixHex(colors.accentDim, colors.accentBright, pulse)}>
+          {"◇ "}
+        </span>
+        <span fg={colors.accentBright}>
+          <b>{BRAND}</b>
+        </span>
       </text>
       <text fg={colors.muted}>Your local agent workspace</text>
     </box>

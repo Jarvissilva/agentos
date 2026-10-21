@@ -20,6 +20,7 @@ export const sessions = sqliteTable("sessions", {
   provider: text("provider").notNull(),
   nativeThreadId: text("native_thread_id"),
   nativeSessionId: text("native_session_id"),
+  title: text("title"),
   providerVersion: text("provider_version").notNull(),
   projectId: text("project_id").references(() => projects.id, {
     onDelete: "set null",

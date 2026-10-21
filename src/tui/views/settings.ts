@@ -1,5 +1,6 @@
 import type { ProviderId } from "../../providers/types";
 import { installWorker, workerStatus } from "../../scheduler/systemd";
+import { BRAND } from "../constants";
 import { prettyPath } from "../theme";
 import type { Command, ResourceContext, ResourceView, Row } from "../types";
 export function settingsView(context: ResourceContext): ResourceView {
@@ -61,7 +62,7 @@ export function settingsView(context: ResourceContext): ResourceView {
       meta: defaultDirectory ? "custom" : "launch directory",
       description: defaultDirectory
         ? prettyPath(defaultDirectory)
-        : "Use the directory agentos was launched from",
+        : `Use the directory ${BRAND} was launched from`,
       body: () => defaultDirectory ?? process.cwd(),
     },
     {

@@ -1,3 +1,4 @@
+import { BRAND } from "../constants";
 import { colors, relativeTime } from "../theme";
 import type { Command, ResourceContext, ResourceView, Row } from "../types";
 export function notificationsView(context: ResourceContext): ResourceView {
@@ -31,7 +32,7 @@ export function notificationsView(context: ResourceContext): ResourceView {
       noun: "notification",
       glyph: "●",
       empty: "Nothing to review",
-      hint: "agentos records local activity here",
+      hint: `${BRAND} records local activity here`,
     },
     rows: notificationRows,
     commands: () => [],
