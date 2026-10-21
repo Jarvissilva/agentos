@@ -70,8 +70,14 @@ export function settingsView(context: ResourceContext): ResourceView {
       name: "Storage paths",
       glyph: "▤",
       meta: "read only",
-      description: "Data, configuration, cache, and database locations",
-      body: () => JSON.stringify(app.paths, null, 2),
+      description:
+        "Data, configuration, cache, database, and global memory locations",
+      body: () =>
+        JSON.stringify(
+          { ...app.paths, globalMemory: app.globalMemory().path },
+          null,
+          2,
+        ),
     },
     {
       id: "scheduler",

@@ -116,6 +116,14 @@ export function resourceCommands(program: Command, app: Application) {
     .option("--disabled")
     .action((id, provider, o) => app.mcps.install(id, provider, !o.disabled));
   mcps
+    .command("install-all <mcp>")
+    .description("Install one MCP across available supported providers")
+    .action(async (id) => {
+      const result = await app.installMcpAll(id);
+      output(result);
+      if (!result.success) process.exitCode = 1;
+    });
+  mcps
     .command("enable <mcp> <provider>")
     .action((id, p) => app.mcps.install(id, p, true));
   mcps

@@ -36,6 +36,7 @@ class Providers extends ProviderManager {
         close: async () => {},
         launch: async (_id, cwd, prompt, _options, runner) => {
           this.launches++;
+          const display = prompt?.split("\n\n").at(-1) ?? "resumed";
           if (!runner) throw new Error("Expected embedded runner");
           return runner(
             this.failLaunch ? "/missing-agentos-provider" : process.execPath,
@@ -44,8 +45,8 @@ class Providers extends ProviderManager {
               this.paintBounds
                 ? `process.stdin.setRawMode(true);const draw=()=>{const [rows,cols]=require("node:child_process").execFileSync("stty",["size"],{stdio:["inherit","pipe","inherit"]}).toString().trim().split(" ").map(Number);process.stdout.write("\\x1b[2J\\x1b[HSIZE:"+cols+"x"+rows+"\\x1b[1;"+(cols-4)+"HRIGHT\\x1b["+rows+";1HBOTTOM")};process.on("SIGWINCH",draw);draw();process.stdin.resume();`
                 : this.exitOnLaunch
-                  ? `process.stdin.setRawMode(true);console.log("PROVIDER:"+${JSON.stringify(prompt ?? "resumed")});setTimeout(()=>process.exit(0),60);`
-                  : `process.stdin.setRawMode(true);console.log("PROVIDER:"+${JSON.stringify(prompt ?? "resumed")});process.stdin.on("data",bytes=>console.log("KEY:"+bytes.toString()));setInterval(()=>{},100);`,
+                  ? `process.stdin.setRawMode(true);console.log("PROVIDER:"+${JSON.stringify(display)});setTimeout(()=>process.exit(0),60);`
+                  : `process.stdin.setRawMode(true);console.log("PROVIDER:"+${JSON.stringify(display)});process.stdin.on("data",bytes=>console.log("KEY:"+bytes.toString()));setInterval(()=>{},100);`,
             ],
             cwd,
           );

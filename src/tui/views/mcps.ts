@@ -143,6 +143,32 @@ export function mcpsView(context: ResourceContext): ResourceView {
             }),
         },
         {
+          name: "install all",
+          description: `Install ${row.name} across available providers`,
+          group: "context",
+          run: () => {
+            void context.perform(async () => {
+              const result = await app.installMcpAll(row.id);
+              const { installed, skipped, failed } = result.summary;
+              const summary = `${installed} installed, ${skipped} skipped, ${failed} failed`;
+              context.setReport({
+                title: `Install ${row.name}`,
+                body: [
+                  ...result.results.map((r) =>
+                    r.status === "installed"
+                      ? `${r.provider}: installed`
+                      : `${r.provider}: ${r.status} — ${r.status === "skipped" ? r.reason : r.error}`,
+                  ),
+                  "",
+                  summary,
+                  result.reminder,
+                ].join("\n"),
+              });
+              setNotice(summary);
+            });
+          },
+        },
+        {
           name: "disable",
           description: `Write ${row.name} disabled for a provider`,
           group: "context",

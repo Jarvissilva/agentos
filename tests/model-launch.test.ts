@@ -121,6 +121,10 @@ test("native contracts pass model settings to initialization and TUI while resum
       ),
     ).toBe(false);
     const codexLaunches = codex.filter((c) => c.args?.[0] === "resume");
+    const initialPrompt = codexLaunches[0]?.args?.at(-1);
+    if (!initialPrompt)
+      throw new Error("Expected the initial memory and task prompt");
+    expect(initialPrompt).toBe("Task");
     expect(codexLaunches.map((c) => c.args)).toEqual([
       [
         "resume",
@@ -132,7 +136,7 @@ test("native contracts pass model settings to initialization and TUI while resum
         f.root,
         "--",
         "thread",
-        "Task",
+        initialPrompt,
       ],
       ["resume", "--cd", f.root, "--", "thread"],
     ]);
@@ -148,7 +152,7 @@ test("native contracts pass model settings to initialization and TUI while resum
         .filter((c) => c.provider === "opencode" && c.args?.[0] === "--session")
         .map((c) => c.args),
     ).toEqual([
-      ["--session", "ses-test", "--prompt=Task", "--", f.root],
+      ["--session", "ses-test", `--prompt=${initialPrompt}`, "--", f.root],
       ["--session", "ses-test", "--", f.root],
     ]);
     const agy = calls.filter((c) => c.provider === "agy");
@@ -156,7 +160,8 @@ test("native contracts pass model settings to initialization and TUI while resum
       agy.find((c) => c.args?.includes("--output-format"))?.args?.slice(0, 4),
     ).toEqual(["--model", "native-model", "--effort", "low"]);
     expect(
-      agy.find((c) => c.args?.includes("--prompt-interactive=Task"))?.args,
+      agy.find((c) => c.args?.includes(`--prompt-interactive=${initialPrompt}`))
+        ?.args,
     ).toEqual([
       "--model",
       "native-model",
@@ -164,7 +169,7 @@ test("native contracts pass model settings to initialization and TUI while resum
       "low",
       "--conversation",
       "conversation",
-      "--prompt-interactive=Task",
+      `--prompt-interactive=${initialPrompt}`,
     ]);
     expect(agy.at(-1)?.args).toEqual(["--conversation", "conversation"]);
     const codexId = sessionIds.codex;

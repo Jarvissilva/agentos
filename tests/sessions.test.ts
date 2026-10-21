@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync, rmdirSync, symlinkSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import { sourceCheckoutDirectory } from "../src/lib/platform/paths";
 import { ProviderManager } from "../src/lib/providers/manager";
@@ -346,4 +347,55 @@ test("embedded launch preflight fails before initialization or claiming a resume
     f.app.resumeSession(session.id, (run) => run(), launcher),
   ).rejects.toThrow("Missing terminal capability");
   expect(f.app.session(session.id).status).toBe("idle");
+});
+
+test("project sessions prepare memory for existing projects and preserve task, role, title, and resume context", async () => {
+  const project = f.app.createProject("Work");
+  const other = f.app.createProject("Other");
+  const memory = f.app.projectMemory(project.id);
+  rmdirSync(memory.path);
+  expect(f.app.projectMemory(project.id)).toEqual(memory);
+  expect(existsSync(memory.path)).toBe(false);
+  const agent = f.app.createAgent(
+    "Developer",
+    "Follow repository conventions.",
+  );
+  const session = await f.app.newSession({
+    project: project.id,
+    cwd: f.root,
+    agent: agent.id,
+    prompt: "Review the code",
+  });
+  const prompt = providers.calls[0]?.prompt;
+  expect(existsSync(memory.path)).toBe(true);
+  expect(prompt).toStartWith("agentos memory context:");
+  expect(prompt).not.toContain("Before working");
+  expect(prompt).toContain(memory.directory);
+  expect(prompt).toContain(project.id);
+  expect(prompt).toContain(memory.root);
+  expect(prompt).toContain("Follow repository conventions.");
+  expect(prompt).toContain("Review the code");
+  expect(prompt).not.toContain(f.app.projectMemory(other.id).path);
+  expect(session.title).toBe("Review the code");
+  f.app.assignSessionProject(session.id, other.id);
+  await f.app.resumeSession(session.id);
+  expect(providers.calls[1]?.prompt).toBeUndefined();
+  const ungrouped = await f.app.newSession({
+    cwd: f.root,
+    prompt: "Exact task",
+  });
+  expect(ungrouped.projectId).toBeNull();
+  expect(providers.calls[2]?.prompt).toBe("Exact task");
+});
+
+test("project memory path replacement is rejected before native session creation", async () => {
+  const project = f.app.createProject("Work");
+  const memory = f.app.projectMemory(project.id);
+  rmdirSync(memory.path);
+  symlinkSync(f.root, memory.path);
+  await expect(
+    f.app.newSession({ project: project.id, cwd: f.root, prompt: "Task" }),
+  ).rejects.toThrow("Memory path");
+  expect(providers.createOptions).toHaveLength(0);
+  expect(f.app.listSessions()).toHaveLength(0);
 });

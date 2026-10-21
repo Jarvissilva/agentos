@@ -43,7 +43,8 @@ export function projectsView(context: ResourceContext): ResourceView {
   };
   const deleteProject = (id: string) =>
     setConfirm({
-      message: "Remove this project's metadata? Workspace files are preserved.",
+      message:
+        "Remove this project's metadata? Memories and workspace files are preserved.",
       action: () => {
         app.removeProject(id);
         setView({ kind: "section", section: "projects" });
@@ -65,6 +66,9 @@ export function projectsView(context: ResourceContext): ResourceView {
       const current = app.project(project.id);
       return [
         current.description || "No description",
+        "",
+        `Memory      ${prettyPath(app.projectMemory(current.id).path)}`,
+        "Memories are preserved when this project is removed.",
         "",
         `Sessions    ${sessions.filter((s) => s.projectId === project.id).length}`,
         ...sessions

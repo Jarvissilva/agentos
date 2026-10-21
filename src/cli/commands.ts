@@ -19,6 +19,16 @@ export function commands(app: Application) {
     .command("paths")
     .description("Show agentos storage paths")
     .action(() => output(app.paths));
+  const memory = program
+    .command("memory")
+    .description("Show the shared global memory location")
+    .action(() => output(app.globalMemory()));
+  memory
+    .command("install <provider>")
+    .description(
+      "Install shared memory rules in a provider's native global instructions",
+    )
+    .action((provider) => output(app.installMemoryInstructions(provider)));
   const settings = program
     .command("settings")
     .description("Manage agentos session defaults");
@@ -81,6 +91,10 @@ export function commands(app: Application) {
     .command("projects")
     .description("Group sessions and automations");
   projects.command("list").action(() => output(app.listProjects()));
+  projects
+    .command("memory <project>")
+    .description("Show the project's persistent memory location")
+    .action((id) => output(app.projectMemory(id)));
   projects
     .command("create <name>")
     .option("-d, --description <text>", "Description", "")

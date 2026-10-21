@@ -27,6 +27,7 @@ import {
   stepRuns,
 } from "../../lib/storage/schema";
 import type { AgentService } from "../agents/service";
+import type { MemoryService } from "../memory/service";
 import type { NotificationService } from "../notifications/service";
 import type { ProjectService } from "../projects/service";
 import {
@@ -72,6 +73,7 @@ export class AutomationService {
     private projects: ProjectService,
     private agents: AgentService,
     private notifications: NotificationService,
+    private memory: MemoryService,
   ) {}
   private jobs = new Set<Promise<unknown>>();
   async drain() {
@@ -426,6 +428,9 @@ export class AutomationService {
           );
       }
       mkdirSync(support, { recursive: true, mode: 0o700 });
+      const memory = this.memory.sessionContext(
+        a.projectId ? this.projects.project(a.projectId) : undefined,
+      );
       const ignore = join(d.cwd, ".gitignore");
       const before = existsSync(ignore) ? readFileSync(ignore, "utf8") : "";
       const alreadyIgnored =
@@ -506,7 +511,7 @@ export class AutomationService {
               step.agent && step.session === "new"
                 ? this.agents.agentDefinition(step.agent).instructions
                 : "";
-            const prompt = `${instructions ? `agentos role instructions:\n${instructions}\n\n` : ""}${step.prompt}\n\nSupporting files directory: ${support}${step.includePrevious ? `\n\nPrevious step result (excerpt):\n${previousText.slice(-12000)}` : ""}`;
+            const prompt = `${memory && step.session === "new" ? `${memory}\n\n` : ""}${instructions ? `agentos role instructions:\n${instructions}\n\n` : ""}${step.prompt}\n\nSupporting files directory: ${support}${step.includePrevious ? `\n\nPrevious step result (excerpt):\n${previousText.slice(-12000)}` : ""}`;
             const result = await adapter.execute({
               cwd: d.cwd,
               prompt,

@@ -203,6 +203,8 @@ test("context actions are slash commands and destructive actions confirm first",
     enter(); // open the selected project
     await screen.flush();
     expect(screen.captureCharFrame()).toContain("Temporary");
+    expect(screen.captureCharFrame()).toContain("Memory");
+    expect(screen.captureCharFrame()).toContain("Memories are preserved");
     expect(screen.captureCharFrame()).toContain(
       "Use /sessions or /automations to browse this group",
     );

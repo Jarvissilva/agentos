@@ -57,6 +57,11 @@ export const mcpSchema = z.discriminatedUnion("transport", [
     .strict(),
 ]);
 export type McpDefinition = z.infer<typeof mcpSchema>;
+interface EntryChange {
+  entry: string;
+  owned?: string;
+  value?: Record<string, unknown>;
+}
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
   if (v && typeof v === "object")
@@ -183,7 +188,9 @@ export class McpService {
                 ...translateMcp(m.definition, i.provider),
                 ...(disabledFlag ? { disabled: !enabled } : { enabled }),
               };
-              needsUpdate = entryFingerprint(desired) !== i.fingerprint;
+              needsUpdate =
+                i.entry !== m.name ||
+                entryFingerprint(desired) !== i.fingerprint;
             } catch {
               needsUpdate = true;
             }
@@ -206,7 +213,7 @@ export class McpService {
   }
   install(id: string, provider: string, enabled = true) {
     const m = this.get(id),
-      entry = `agentos-${m.name}`,
+      entry = m.name,
       path = this.configPath(provider);
     const value = {
       ...translateMcp(m.definition, provider),
@@ -221,22 +228,34 @@ export class McpService {
         and(eq(mcpInstalls.mcpId, m.id), eq(mcpInstalls.provider, provider)),
       )
       .get();
-    this.change(path, provider, entry, existing?.fingerprint, value);
-    this.db
-      .insert(mcpInstalls)
-      .values({
-        id: existing?.id ?? randomUUID(),
-        mcpId: m.id,
-        provider,
-        path,
-        entry,
-        fingerprint: entryFingerprint(value),
-      })
-      .onConflictDoUpdate({
-        target: mcpInstalls.id,
-        set: { fingerprint: entryFingerprint(value) },
-      })
-      .run();
+    if (existing && existing.path !== path)
+      throw new Error(
+        "Provider configuration path changed; uninstall the previous installation before reinstalling",
+      );
+    const changes: EntryChange[] =
+      existing && existing.entry !== entry
+        ? [
+            { entry: existing.entry, owned: existing.fingerprint },
+            { entry, value },
+          ]
+        : [{ entry, owned: existing?.fingerprint, value }];
+    this.change(path, provider, changes, () => {
+      this.db
+        .insert(mcpInstalls)
+        .values({
+          id: existing?.id ?? randomUUID(),
+          mcpId: m.id,
+          provider,
+          path,
+          entry,
+          fingerprint: entryFingerprint(value),
+        })
+        .onConflictDoUpdate({
+          target: mcpInstalls.id,
+          set: { path, entry, fingerprint: entryFingerprint(value) },
+        })
+        .run();
+    });
   }
   uninstall(id: string, provider: string) {
     const m = this.get(id);
@@ -248,8 +267,12 @@ export class McpService {
       )
       .get();
     if (!i) throw new Error("No managed installation for this provider");
-    this.change(i.path, provider, i.entry, i.fingerprint);
-    this.db.delete(mcpInstalls).where(eq(mcpInstalls.id, i.id)).run();
+    this.change(
+      i.path,
+      provider,
+      [{ entry: i.entry, owned: i.fingerprint }],
+      () => this.db.delete(mcpInstalls).where(eq(mcpInstalls.id, i.id)).run(),
+    );
   }
   remove(id: string) {
     const m = this.get(id);
@@ -263,9 +286,8 @@ export class McpService {
   private change(
     path: string,
     provider: string,
-    entry: string,
-    owned?: string,
-    value?: Record<string, unknown>,
+    changes: EntryChange[],
+    persist: () => void,
   ) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     const lock = `${path}.agentos-lock`;
@@ -301,68 +323,109 @@ export class McpService {
       { mode: 0o600 },
     );
     try {
-      const original = existsSync(path) ? readFileSync(path, "utf8") : "";
-      const old = this.readEntry(provider, original, entry);
-      if (old !== undefined && (!owned || entryFingerprint(old) !== owned))
-        throw new Error(
-          "Native MCP entry exists or was modified externally; no changes made",
+      const hadFile = existsSync(path);
+      const original = hadFile ? readFileSync(path, "utf8") : "";
+      let next = original;
+      for (const change of changes)
+        next = this.editEntry(provider, next, change);
+      let written = false;
+      try {
+        this.db.transaction(
+          () => {
+            if (next !== original) {
+              atomicWrite(path, next, original);
+              written = true;
+            }
+            persist();
+          },
+          { behavior: "immediate" },
         );
-      let next: string;
-      if (nativeConfiguration(provider).format === "toml") {
-        const legacyStart = `# Agent OS begin ${entry}\n`;
-        const label = original.includes(legacyStart) ? "Agent OS" : "agentos";
-        const start = `# ${label} begin ${entry}\n`,
-          end = `# ${label} end ${entry}\n`;
-        const begin = original.indexOf(start),
-          finish = original.indexOf(end);
-        if (old !== undefined && (begin < 0 || finish < begin))
-          throw new Error(
-            "Managed TOML boundaries were modified; refusing to edit",
-          );
-        const without =
-          begin >= 0 && finish >= begin
-            ? original.slice(0, begin) + original.slice(finish + end.length)
-            : original;
-        const block = value
-          ? TOML.stringify({ mcp_servers: { [entry]: value } } as TOML.JsonMap)
-          : "";
-        next =
-          without +
-          (value
-            ? `\n# agentos begin ${entry}\n${block}# agentos end ${entry}\n`
-            : "");
-        const beforeDoc = TOML.parse(original),
-          afterDoc = TOML.parse(next);
-        // Verify that removing our block did not remove unrelated native entries.
-        const removeEntry = (doc: TOML.JsonMap) => {
-          const root = doc.mcp_servers as TOML.JsonMap | undefined;
-          if (root) {
-            delete root[entry];
-            if (!Object.keys(root).length) delete doc.mcp_servers;
+      } catch (error) {
+        if (written) {
+          try {
+            if (hadFile) atomicWrite(path, original, next);
+            else {
+              if (readFileSync(path, "utf8") !== next)
+                throw new Error("Provider configuration changed externally");
+              rmSync(path);
+            }
+          } catch (rollbackError) {
+            throw new AggregateError(
+              [error, rollbackError],
+              "MCP installation metadata could not be saved and configuration rollback failed; inspect the provider configuration before retrying",
+            );
           }
-          return doc;
-        };
-        if (
-          entryFingerprint(removeEntry(beforeDoc)) !==
-          entryFingerprint(removeEntry(afterDoc))
-        )
-          throw new Error(
-            "Managed TOML block contains unrelated changes; refusing to edit",
-          );
-      } else {
-        next = applyEdits(
-          original || "{}\n",
-          modify(
-            original || "{}\n",
-            [nativeConfiguration(provider).section, entry],
-            value,
-            { formattingOptions: { insertSpaces: true, tabSize: 2 } },
-          ),
-        );
+        }
+        throw error;
       }
-      atomicWrite(path, next, original);
     } finally {
       rmSync(lock, { recursive: true });
     }
+  }
+  private editEntry(
+    provider: string,
+    original: string,
+    { entry, owned, value }: EntryChange,
+  ): string {
+    const old = this.readEntry(provider, original, entry);
+    if (old !== undefined && (!owned || entryFingerprint(old) !== owned))
+      throw new Error(
+        "Native MCP entry exists or was modified externally; no changes made",
+      );
+    if (old === undefined && value === undefined) return original;
+    let next: string;
+    if (nativeConfiguration(provider).format === "toml") {
+      const legacyStart = `# Agent OS begin ${entry}\n`;
+      const label = original.includes(legacyStart) ? "Agent OS" : "agentos";
+      const start = `# ${label} begin ${entry}\n`,
+        end = `# ${label} end ${entry}\n`;
+      const begin = original.indexOf(start),
+        finish = original.indexOf(end);
+      if (old !== undefined && (begin < 0 || finish < begin))
+        throw new Error(
+          "Managed TOML boundaries were modified; refusing to edit",
+        );
+      const without =
+        begin >= 0 && finish >= begin
+          ? original.slice(0, begin) + original.slice(finish + end.length)
+          : original;
+      const block = value
+        ? TOML.stringify({ mcp_servers: { [entry]: value } } as TOML.JsonMap)
+        : "";
+      next =
+        without +
+        (value
+          ? `\n# agentos begin ${entry}\n${block}# agentos end ${entry}\n`
+          : "");
+      const beforeDoc = TOML.parse(original),
+        afterDoc = TOML.parse(next);
+      // Verify that removing our block did not remove unrelated native entries.
+      const removeEntry = (doc: TOML.JsonMap) => {
+        const root = doc.mcp_servers as TOML.JsonMap | undefined;
+        if (root) {
+          delete root[entry];
+          if (!Object.keys(root).length) delete doc.mcp_servers;
+        }
+        return doc;
+      };
+      if (
+        entryFingerprint(removeEntry(beforeDoc)) !==
+        entryFingerprint(removeEntry(afterDoc))
+      )
+        throw new Error(
+          "Managed TOML block contains unrelated changes; refusing to edit",
+        );
+    } else {
+      next = applyEdits(
+        original || "{}\n",
+        modify(
+          original || "{}\n",
+          [nativeConfiguration(provider).section, entry],
+          value,
+          { formattingOptions: { insertSpaces: true, tabSize: 2 } },
+        ),
+      );
+    }
+    return next;
   }
 }

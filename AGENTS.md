@@ -28,9 +28,27 @@ providers, not injected into prompts.
 
 ## Core resources
 
+- **Memory** (`src/modules/memory/service.ts`) prepares `<data>/memory/global/`
+  on startup without writing or replacing notes. Shared recall/save rules are
+  explicitly installed with `memory install <provider>` into native global
+  instruction files; never edit them at startup or session launch. Installation
+  preserves existing text and rejects altered or malformed managed blocks.
+  Project launches add only a small JSON context line; ungrouped launches leave
+  task text unchanged. Resume/continuation never reinserts memory context.
+  Keep shared preferences in `global/` and project details in
+  `projects/<project-id>/`. Native providers own reads, writes, and permissions.
+  Global rules also affect standalone provider sessions. Project removal never
+  deletes memories.
 - **Projects** (`src/modules/projects/service.ts`) are optional organizational
-  groups. They do not own directories or instruction files. Removing one clears
-  memberships while preserving sessions, automations, and workspace files.
+  groups. They do not own workspace directories or instruction files. Creation
+  prepares `<data>/memory/projects/<project-id>/`; existing projects prepare it
+  on first use in a new session or automation run. New native project sessions
+  receive scoped memory metadata; resume never reinserts it. Renames retain
+  the memory path. Removing a project clears memberships while preserving
+  sessions, automations, workspace files, and memories. Basic Memory's `agentos`
+  root must match `<data>/memory` to use MCP tools for these notes; native file
+  tools remain subject to native permissions. These folders are organizational,
+  not access-control boundaries.
 - **Sessions** (`src/modules/sessions/service.ts`) store native IDs, provider,
   directory, title, optional project/agent, and attachment metadata. Resume uses
   the stored provider and directory without reinserting role instructions or new
@@ -50,9 +68,11 @@ providers, not injected into prompts.
   install repository guidance just to make Builder discover it.
 - **MCPs** (`src/modules/mcps/service.ts` and `configuration.ts`) store validated
   central definitions and track fingerprinted native installations. Explicit
-  installation writes owned `agentos-` entries, preserving unrelated native
-  configuration. Use credential references, never embedded secrets. Do not
-  overwrite conflicting external entries.
+  installation writes owned entries using the exact registered name, preserving
+  unrelated native configuration. Existing automatically prefixed entries are
+  renamed on explicit reinstall/enable/disable, with ownership and collision
+  checks; never rename them at startup. Use credential references, never embedded
+  secrets. Do not overwrite conflicting external entries.
 - **Automations** (`src/modules/automations/definition.ts` and `service.ts`) use
   validated version 1 YAML with an existing `cwd`, slug, schedule, and sequential
   steps. Schedules support manual, once, interval, and five-field cron with a

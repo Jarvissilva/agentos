@@ -41,7 +41,7 @@ class Providers extends ProviderManager {
         input.onIdentity?.(`native-${m.calls.length}`);
         if (m.gate) await m.gate;
         if (input.signal?.aborted) throw new Error("Canceled");
-        if (m.fail && input.prompt.startsWith("Fail"))
+        if (m.fail && /\bFail\b/.test(input.prompt))
           throw new Error("Provider failed");
         return { nativeId: `native-${m.calls.length}`, text: "Short result" };
       },
@@ -89,7 +89,9 @@ test("failed-step retry retains successful results and compatible native session
   const retried = await f.app.automations.run(a.id, { retryId: failed?.id });
   expect(retried?.status).toBe("completed");
   expect(
-    f.providers.calls.filter((s) => s.prompt.startsWith("Research")),
+    f.providers.calls.filter((s) =>
+      s.prompt.includes("Research\n\nSupporting files directory:"),
+    ),
   ).toHaveLength(1);
   expect(f.providers.calls[2]?.nativeId).toBe("native-1");
   expect(f.providers.calls[2]?.prompt).toContain("Short result");
@@ -275,4 +277,44 @@ test("interactive model defaults never reach automation execution", async () => 
   expect(f.providers.calls).toHaveLength(2);
   for (const input of f.providers.calls)
     expect(input.sessionOptions).toBeUndefined();
+});
+
+test("grouped automations supply project memory only to new native sessions", async () => {
+  const f = setup();
+  const project = f.app.createProject("Work");
+  const a = f.app.automations.save({
+    ...definition(f.root),
+    steps: [
+      { name: "Research", provider: "codex", prompt: "Research" },
+      {
+        name: "Review",
+        provider: "codex",
+        prompt: "Review",
+        session: "previous",
+      },
+      { name: "Finish", provider: "codex", prompt: "Finish", session: "new" },
+    ],
+  });
+  f.app.automations.assignProject(a.id, project.id);
+  const result = await f.app.automations.run(a.id);
+  expect(result?.status).toBe("completed");
+  const memory = f.app.projectMemory(project.id);
+  expect(f.providers.calls[0]?.prompt).toContain("agentos memory context:");
+  expect(f.providers.calls[0]?.prompt).not.toContain("Before working");
+  expect(f.providers.calls[0]?.prompt).toContain(memory.directory);
+  expect(f.providers.calls[1]?.prompt).not.toContain("agentos memory context:");
+  expect(f.providers.calls[1]?.prompt).not.toContain("agentos global memory:");
+  expect(f.providers.calls[1]?.nativeId).toBe("native-1");
+  expect(f.providers.calls[2]?.prompt).toContain(memory.directory);
+  f.app.removeProject(project.id);
+  f.providers.calls.length = 0;
+  const ungrouped = await f.app.automations.run(a.id);
+  expect(ungrouped?.status).toBe("completed");
+  expect(f.providers.calls[0]?.prompt).toStartWith("Research");
+  expect(f.providers.calls[2]?.prompt).toStartWith("Finish");
+  expect(
+    f.providers.calls.every(
+      (c) => !c.prompt.includes("agentos memory context:"),
+    ),
+  ).toBe(true);
 });

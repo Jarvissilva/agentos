@@ -1,10 +1,13 @@
+import { redact } from "./lib/platform/files";
 import type { AppPaths } from "./lib/platform/paths";
 import { ProviderManager } from "./lib/providers/manager";
+import type { ProviderId } from "./lib/providers/types";
 import type { AppDatabase } from "./lib/storage/database";
 import { providerMetadata } from "./lib/storage/schema";
 import { AgentService } from "./modules/agents/service";
 import { AutomationService } from "./modules/automations/service";
 import { McpService } from "./modules/mcps/service";
+import { MemoryService } from "./modules/memory/service";
 import { NotificationService } from "./modules/notifications/service";
 import { ProjectService } from "./modules/projects/service";
 import { SessionService } from "./modules/sessions/service";
@@ -19,12 +22,18 @@ export type {
   TerminalHandoff,
 } from "./modules/sessions/service";
 
+export type McpInstallResult =
+  | { provider: ProviderId; status: "installed" }
+  | { provider: ProviderId; status: "skipped"; reason: string }
+  | { provider: ProviderId; status: "failed"; error: string };
+
 export class Application {
   readonly skills: SkillService;
   readonly mcps: McpService;
   readonly automations: AutomationService;
   private readonly settings: SettingsService;
   private readonly projects: ProjectService;
+  private readonly memory: MemoryService;
   private readonly agents: AgentService;
   private readonly notifications: NotificationService;
   private readonly sessions: SessionService;
@@ -37,7 +46,9 @@ export class Application {
     this.settings = new SettingsService(paths, providers, (provider, cwd) =>
       this.modelCatalog(provider, cwd),
     );
-    this.projects = new ProjectService(db);
+    this.memory = new MemoryService(paths);
+    this.memory.prepareGlobal();
+    this.projects = new ProjectService(db, this.memory);
     this.agents = new AgentService(db, paths);
     this.notifications = new NotificationService(db);
     this.sessions = new SessionService(
@@ -47,6 +58,7 @@ export class Application {
       this.agents,
       this.settings,
       this.notifications,
+      this.memory,
     );
     this.skills = new SkillService(db, paths);
     this.mcps = new McpService(db);
@@ -57,6 +69,7 @@ export class Application {
       this.projects,
       this.agents,
       this.notifications,
+      this.memory,
     );
   }
   async detectProviders() {
@@ -75,6 +88,48 @@ export class Application {
         })
         .run();
     return list;
+  }
+
+  async installMcpAll(id: string) {
+    const mcp = this.mcps.get(id);
+    const providers = await this.detectProviders();
+    const results: McpInstallResult[] = [];
+    for (const provider of providers) {
+      if (!provider.installed || !provider.interactive) {
+        results.push({
+          provider: provider.id,
+          status: "skipped",
+          reason: redact(
+            provider.reason ??
+              (provider.installed
+                ? "Native interactive support is unavailable"
+                : "Provider is not installed"),
+          ),
+        });
+        continue;
+      }
+      try {
+        this.mcps.install(mcp.id, provider.id);
+        results.push({ provider: provider.id, status: "installed" });
+      } catch (error) {
+        results.push({
+          provider: provider.id,
+          status: "failed",
+          error: redact(error instanceof Error ? error.message : String(error)),
+        });
+      }
+    }
+    const summary = {
+      installed: results.filter((r) => r.status === "installed").length,
+      skipped: results.filter((r) => r.status === "skipped").length,
+      failed: results.filter((r) => r.status === "failed").length,
+    };
+    return {
+      results,
+      summary,
+      success: summary.installed > 0 && summary.failed === 0,
+      reminder: "Start fresh provider sessions to use the installed MCP.",
+    };
   }
 
   providerDefaults(...args: Parameters<SettingsService["providerDefaults"]>) {
@@ -145,6 +200,15 @@ export class Application {
   }
   project(...args: Parameters<ProjectService["project"]>) {
     return this.projects.project(...args);
+  }
+  installMemoryInstructions(provider: string) {
+    return this.memory.installNative(provider);
+  }
+  globalMemory() {
+    return this.memory.globalLocation();
+  }
+  projectMemory(...args: Parameters<ProjectService["memoryLocation"]>) {
+    return this.projects.memoryLocation(...args);
   }
   createProject(...args: Parameters<ProjectService["createProject"]>) {
     return this.projects.createProject(...args);

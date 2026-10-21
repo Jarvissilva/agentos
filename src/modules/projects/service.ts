@@ -3,9 +3,13 @@ import { eq } from "drizzle-orm";
 import { nameSchema } from "../../lib/platform/paths";
 import type { AppDatabase } from "../../lib/storage/database";
 import { projects } from "../../lib/storage/schema";
+import type { MemoryService } from "../memory/service";
 
 export class ProjectService {
-  constructor(private db: AppDatabase) {}
+  constructor(
+    private db: AppDatabase,
+    private memory: MemoryService,
+  ) {}
   listProjects() {
     return this.db.select().from(projects).orderBy(projects.name).all();
   }
@@ -17,16 +21,24 @@ export class ProjectService {
     return result;
   }
   createProject(name: string, description = "") {
-    return this.db
-      .insert(projects)
-      .values({
-        id: randomUUID(),
-        name: nameSchema.parse(name),
-        description,
-        createdAt: Date.now(),
-      })
-      .returning()
-      .get();
+    return this.db.transaction(() => {
+      const project = this.db
+        .insert(projects)
+        .values({
+          id: randomUUID(),
+          name: nameSchema.parse(name),
+          description,
+          createdAt: Date.now(),
+        })
+        .returning()
+        .get();
+      this.memory.prepareProject(project.id);
+      return project;
+    });
+  }
+  memoryLocation(id: string) {
+    const project = this.project(id);
+    return this.memory.projectLocation(project.id);
   }
   updateProject(id: string, input: { name?: string; description?: string }) {
     const existing = this.project(id);

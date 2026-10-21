@@ -93,7 +93,7 @@ agentos sessions instructions <session-id> --edit
 agentos sessions instructions <session-id> --file GEMINI.md
 ```
 
-Use `bun src/index.ts ...` without linking. Direct commands print JSON; native interactive operations require a real terminal. `--help` lists commands and flags. Projects and agents are optional. Projects are organizational groups, with a name and description; they do not own directories or instruction files. Every session uses its own working directory: the TUI asks for one, and the CLI uses `--cwd`, the saved default directory, or the launch directory. Automations keep their independently configured `cwd`.
+Use `bun src/index.ts ...` without linking. Direct commands print JSON; native interactive operations require a real terminal. `--help` lists commands and flags. Projects and agents are optional. Projects are organizational groups, with a name and description; they do not own workspace directories or instruction files. Every session uses its own working directory: the TUI asks for one, and the CLI uses `--cwd`, the saved default directory, or the launch directory. Automations keep their independently configured `cwd`.
 
 Roles are central Markdown files with `name`/`description` YAML frontmatter. Their instructions become an explicitly labeled initial native user message. They never replace default system/developer prompts or project instruction files, and are not reinserted on resume. Editing a role affects future sessions. Import an existing definition using `agents import <file>`.
 
@@ -116,7 +116,26 @@ agentos sessions list --project Wizyz
 agentos automations list --project Wizyz
 ```
 
-Project removal clears memberships and preserves sessions, automations, histories, and workspace files. Group reassignment never changes working directories. On upgrade, existing project IDs and session memberships are retained; previous project directory fields are removed, existing session/automation directories remain intact, and automations start ungrouped. Instructions are edited only by an explicit action on a session, using its directory (`/instructions`). Agent deletion preserves native conversations and existing session metadata.
+AgentOS creates `<AgentOS data>/memory/global/` on startup if missing and reuses it without replacing existing notes. This folder holds shared preferences and knowledge useful across projects. `agentos memory` prints its Basic Memory project, root, directory, and absolute path; Settings → Storage paths also shows the global memory location. Creating the folder does not create notes or a new Basic Memory collection.
+
+Each project automatically gets a private notes folder at `<AgentOS data>/memory/projects/<project-id>/`. Project IDs keep memory paths stable across renames and separate projects that reuse a deleted name. Existing projects get their folder when first used in a new session or automation run. Project details show the path; `agentos projects memory <project>` prints the Basic Memory project, root, notes directory, and absolute path without changing files.
+
+Install the shared rules once into each provider's native global instruction file:
+
+```sh
+agentos memory install codex
+agentos memory install opencode
+agentos memory install agy
+```
+
+The explicit installer appends a marked block while preserving existing content. Repeated installation is idempotent; edited, malformed, or differing managed blocks are preserved and reported for review. Installation honors `CODEX_HOME` and OpenCode's XDG config directory. Codex uses a nonempty `AGENTS.override.md` when present, otherwise `AGENTS.md`; OpenCode uses its global `AGENTS.md`, and Agy uses `~/.gemini/GEMINI.md`. AgentOS does not edit these files automatically at startup or on session launch. These global rules also apply to standalone native provider sessions. Start fresh native sessions after installation.
+
+The persistent rules request recall of relevant global notes and saving of durable shared preferences. A new project session supplies only a short `agentos memory context:` JSON line containing the selected project ID/name, memory root, and notes directory before the task. Ungrouped sessions pass through the original task without memory text. New native automation sessions follow the same convention; resuming or continuing a native session never reinserts context. Roles remain labeled initial user instructions. Project reassignment is metadata only: start a new session to use a different project's memory context.
+
+The native agent performs memory reads and writes subject to its tools and permissions. Shared rules keep project-specific details in the selected project folder and use global memory only when no context is provided. Configure Basic Memory's `agentos` collection to use `<AgentOS data>/memory`. Rules instruct agents to verify that root before using MCP tools, or use native Markdown file tools in the applicable folders if unavailable or mismatched. Global and project folders are organizational scopes within one collection, not access-control boundaries. Creating a project does not install rules, reconfigure Basic Memory, or create a note or collection.
+
+
+Project removal clears memberships and preserves sessions, automations, histories, workspace files, and memories. Global memory is shared and remains untouched by project creation, renaming, or removal. Preserved memories remain at the path shown before removal and can be removed separately on explicit request. Group reassignment never changes working directories. On upgrade, existing project IDs and session memberships are retained; previous project directory fields are removed, existing session/automation directories remain intact, and automations start ungrouped. Instructions are edited only by an explicit action on a session, using its directory (`/instructions`). Agent deletion preserves native conversations and existing session metadata.
 
 ## Settings
 
@@ -194,6 +213,7 @@ bearerEnv: ANALYTICS_TOKEN
 agentos mcps register ./research.yaml
 agentos mcps install research codex
 agentos mcps install research opencode
+agentos mcps install-all research     # Install this MCP across available providers
 agentos mcps status research
 agentos mcps disable research codex
 agentos mcps update research ./updated-research.yaml
@@ -201,7 +221,14 @@ agentos mcps install research codex   # Explicitly apply the changed definition
 agentos mcps uninstall research codex
 ```
 
-Native entry names are prefixed `agentos-`. Global files:
+Registration and import only save the MCP definition. Use `/install all` on a
+selected MCP in the TUI, or `mcps install-all <mcp>`, to install it across detected,
+supported providers. Each provider is reported as installed, skipped, or failed;
+successful installations remain if another provider fails. The CLI exits with a
+failure status if any installation fails or none succeeds. Start fresh provider
+sessions after installation.
+
+Native MCP entries use the exact registered name, and skills use their exact skill name. Existing MCP installations with an automatically added `agentos-` prefix remain usable and uninstallable; status shows them as outdated. The next install, enable, or disable action safely replaces the owned prefixed entry with the registered name. Existing external entries with that name and externally modified owned entries are preserved and reported as conflicts. No names change at startup. Global files:
 
 - Codex: `$CODEX_HOME/config.toml`, default `~/.codex/config.toml`.
 - OpenCode: `$XDG_CONFIG_HOME/opencode/opencode.json` or an existing `opencode.jsonc`. Having both is treated as a precedence conflict.
@@ -293,7 +320,7 @@ Optional `~/.config/agentos/worker.env` is a systemd EnvironmentFile for explici
 
 Existing installations continue using their legacy `agent-os/` directories and `agent-os.db` in place, preserving saved data, managed links, and native configuration ownership. `agentos paths` shows the locations in use. No data is moved automatically.
 
-Data defaults to `~/.local/share/agentos`: `agentos.db`, `agents/`, `skills/`, and `automations/<slug>/automation.yaml`. Configuration/cache directories respect absolute XDG values. Application directories are private (`0700`); database and new instruction files use `0600`. SQLite uses WAL, foreign keys, transactions, migrations, and downgrade detection. Provider conversations remain in native storage.
+Data defaults to `~/.local/share/agentos`: `agentos.db`, `agents/`, `skills/`, `automations/<slug>/automation.yaml`, `memory/global/`, and `memory/projects/<project-id>/`. Configuration/cache directories respect absolute XDG values. Application directories are private (`0700`); database and new instruction files use `0600`. SQLite uses WAL, foreign keys, transactions, migrations, and downgrade detection. Provider conversations remain in native storage.
 
 Raw provider stdout/stderr and full conversation archives are not copied into run logs. Logs contain event types; known environment credential values and bearer strings are redacted from results/errors. Keep credentials out of authored prompts and definitions.
 

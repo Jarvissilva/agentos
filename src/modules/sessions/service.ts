@@ -13,6 +13,7 @@ import type {
 import type { AppDatabase } from "../../lib/storage/database";
 import { type Session, sessions } from "../../lib/storage/schema";
 import type { AgentService } from "../agents/service";
+import type { MemoryService } from "../memory/service";
 import type { NotificationService } from "../notifications/service";
 import type { ProjectService } from "../projects/service";
 import type { SettingsService } from "../settings/service";
@@ -49,6 +50,7 @@ export class SessionService {
     private agents: AgentService,
     private settings: SettingsService,
     private notifications: NotificationService,
+    private memory: MemoryService,
   ) {}
   instructionFile(session: string, kind = "AGENTS.md") {
     if (!["AGENTS.md", "GEMINI.md", "CLAUDE.md"].includes(kind))
@@ -290,7 +292,7 @@ export class SessionService {
     const definition = agent
       ? this.agents.agentDefinition(agent.id)
       : undefined;
-    const prompt = definition
+    const task = definition
       ? `agentos role: ${definition.name}\n\n${definition.instructions}\n\n${input.prompt || "Use this role for this conversation and wait for my task."}`
       : input.prompt;
     const title = sessionTitle(input.prompt);
@@ -309,6 +311,10 @@ export class SessionService {
       this.settings.providerDefaults(adapter.id),
       cwd,
     );
+    const memoryContext = this.memory.sessionContext(project);
+    const prompt = memoryContext
+      ? `${memoryContext}\n\n${task || "Wait for my task."}`
+      : task;
     const id = randomUUID();
     const now = Date.now();
     this.db
