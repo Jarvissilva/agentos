@@ -8,7 +8,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Application, directory, type TerminalHandoff } from "../app";
 import { redact } from "../lib/platform/files";
-import { errorMessage } from "../lib/platform/paths";
+import { errorMessage, sourceCheckoutDirectory } from "../lib/platform/paths";
 import type {
   ModelCatalog,
   ProviderDefaults,
@@ -627,6 +627,25 @@ function Workspace({
   ];
 
   const systemCommands: Command[] = [
+    {
+      name: "builder",
+      description: "Start a fresh session in the AgentOS source checkout",
+      group: "system",
+      run: () => {
+        if (detecting) throw new Error("Detecting providers; please wait.");
+        if (!selectedProviderInfo?.interactive)
+          throw new Error(
+            selectedProviderInfo?.reason ??
+              "No interactive provider available. Use /provider or /providers to inspect installation status.",
+          );
+        launch(
+          undefined,
+          undefined,
+          selectedProviderInfo.id,
+          sourceCheckoutDirectory(),
+        );
+      },
+    },
     {
       name: "provider",
       description: "Choose the provider for your next message",

@@ -2,11 +2,13 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   realpathSync,
   statSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 export interface AppPaths {
@@ -15,6 +17,26 @@ export interface AppPaths {
   cache: string;
   database: string;
   agents: string;
+}
+
+export function sourceCheckoutDirectory(sourceUrl = import.meta.url): string {
+  try {
+    const root = realpathSync(fileURLToPath(new URL("../../../", sourceUrl)));
+    const manifest = JSON.parse(
+      readFileSync(join(root, "package.json"), "utf8"),
+    );
+    if (
+      manifest.name !== "agentos" ||
+      !statSync(join(root, "src/index.ts")).isFile() ||
+      !statSync(join(root, "src/tui/app.tsx")).isFile()
+    )
+      throw new Error("Invalid source checkout");
+    return root;
+  } catch {
+    throw new Error(
+      "AgentOS source checkout is unavailable. Restore the checkout containing the running source files and retry /builder.",
+    );
+  }
 }
 
 export function appPaths(env: NodeJS.ProcessEnv = process.env): AppPaths {

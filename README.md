@@ -48,9 +48,13 @@ Commands include:
 | Context | Home: `/directory`, `/agent`, `/project`; resources: `/rename`, `/project`, `/details`, `/open`, `/resume`, `/history`, `/edit`, `/instructions`, `/delete`, `/install`, `/uninstall`, `/disable`, `/run`, `/runs`, `/toggle`, `/cancel`, `/retry` |
 | Create | `/new project`, `/new agent`, `/new skill`, `/new mcp`, `/new automation`, `/new session`, `/import agent\|skill\|mcp\|automation` |
 | Navigate | `/settings`, `/sessions`, `/projects`, `/automations`, `/agents`, `/skills`, `/mcps`, `/providers`, `/runs`, `/notifications` |
-| System | `/provider`, `/back`, `/home`, `/help`, `/refresh`, `/scheduler install`, `/scheduler status`, `/quit` |
+| System | `/builder`, `/provider`, `/back`, `/home`, `/help`, `/refresh`, `/scheduler install`, `/scheduler status`, `/quit` |
 
 `/help` lists every command available on the current screen, including context actions for the selected row. `/new session` runs a four-step wizard: choose a project group (or none), enter the working directory, choose an agent (or none), then choose a provider. Destructive commands ask for `y`/`n` confirmation. Opening a notification marks it read. There is no replacement provider chat UI.
+
+Use `/builder` from the AgentOS command palette on Home or any resource screen to start a fresh normal session in this source checkout, even when AgentOS was launched from another directory. It opens the selected provider's native interface with its saved model settings and no initial task, agent role, or project. Home drafts and directory selections are preserved. An unavailable selected provider reports an error; choose another with `/provider`. The checkout must remain available. To continue earlier Builder work, open `/sessions` and press Enter or use `/resume` on its saved session; resume uses the stored provider and directory. `/builder` always creates a new session. There is no separate `agentos builder` shell command.
+
+The checkout includes repository-local [agent-builder](.agents/skills/agent-builder/SKILL.md), [skill-builder](.agents/skills/skill-builder/SKILL.md), and [automation-builder](.agents/skills/automation-builder/SKILL.md) skills for managing those resources through existing interfaces. They use native provider skill discovery; no global installation or provider configuration changes are needed. Ask the native provider to create or update an AgentOS role, skill, or automation, or name the relevant skill explicitly.
 
 Native providers retain their own shortcuts and trust/approval screens, except for the agentos tab shortcuts listed below. Terminal settings are saved/restored even after an abnormal provider/editor exit. `VISUAL`/`EDITOR` can name an executable or path; shell argument strings are deliberately not evaluated. Default editor: `vi`.
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
+import { sourceCheckoutDirectory } from "../src/lib/platform/paths";
 import { ProviderManager } from "../src/lib/providers/manager";
 import type {
   ProviderConnection,
@@ -144,6 +145,26 @@ test("project and agent are optional", async () => {
   expect(session.agentId).toBeNull();
   expect(session.title).toBeNull();
   expect(providers.createTitles[0]).toBeUndefined();
+});
+
+test("checkout sessions remain normal sessions and resume with their saved directory and provider", async () => {
+  f.app.setDefaultDirectory(f.root);
+  const cwd = sourceCheckoutDirectory();
+  const session = await f.app.newSession({ cwd, provider: "codex" });
+  expect(session.cwd).toBe(cwd);
+  expect(session.provider).toBe("codex");
+  expect(session.projectId).toBeNull();
+  expect(session.agentId).toBeNull();
+  expect(providers.calls[0]?.prompt).toBeUndefined();
+  f.app.setPreferredProvider("opencode");
+  await f.app.resumeSession(session.id);
+  expect(providers.calls[1]).toEqual({
+    id: "native-thread",
+    cwd,
+    prompt: undefined,
+  });
+  expect(f.app.session(session.id).provider).toBe("codex");
+  expect(f.app.defaultDirectory()).toBe(f.root);
 });
 
 test("rename writes the normalized title through and provider names win during sync", async () => {

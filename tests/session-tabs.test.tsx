@@ -4,6 +4,7 @@ import { EmbeddedTerminalRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createRoot, flushSync } from "@opentui/react";
 import { EmbeddedProcess } from "../src/lib/platform/embedded-process";
+import { sourceCheckoutDirectory } from "../src/lib/platform/paths";
 import { ProviderManager } from "../src/lib/providers/manager";
 import type { ProviderAdapter } from "../src/lib/providers/types";
 import { App } from "../src/tui/app";
@@ -174,6 +175,57 @@ test("tab labels use the session title and refresh when a session is renamed", a
     await f.until(() =>
       f.screen.captureCharFrame().includes("codex · Renamed tab"),
     );
+  } finally {
+    await f.closeUI();
+    f.close();
+    if (input) Object.defineProperty(process.stdin, "isTTY", input);
+    else Reflect.deleteProperty(process.stdin, "isTTY");
+    if (output) Object.defineProperty(process.stdout, "isTTY", output);
+    else Reflect.deleteProperty(process.stdout, "isTTY");
+  }
+});
+
+test("/builder opens an embedded normal session and Sessions resumes it without consuming the Home draft", async () => {
+  const input = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+  const output = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+  Object.defineProperty(process.stdin, "isTTY", {
+    configurable: true,
+    value: true,
+  });
+  Object.defineProperty(process.stdout, "isTTY", {
+    configurable: true,
+    value: true,
+  });
+  const f = await setup();
+  const command = async (name: string) => {
+    await f.key("p", { ctrl: true });
+    await f.type(name);
+    await f.enter();
+  };
+  try {
+    await f.type("Keep my Home task");
+    await command("builder");
+    await f.until(() =>
+      f.screen.captureCharFrame().includes("PROVIDER:resumed"),
+    );
+    const session = f.app.listSessions()[0];
+    if (!session) throw new Error("Builder session was not created");
+    expect(session.cwd).toBe(sourceCheckoutDirectory());
+    expect(session.provider).toBe("codex");
+    expect(session.projectId).toBeNull();
+    expect(session.agentId).toBeNull();
+    expect(session.title).toBeNull();
+    expect(session.status).toBe("attached");
+    await f.key("F2");
+    expect(f.screen.captureCharFrame()).toContain("Keep my Home task");
+    // Resume from another dashboard selects the already attached normal session.
+    await f.key("t", { ctrl: true });
+    await command("sessions");
+    await f.enter();
+    expect(f.providers.launches).toBe(1);
+    expect(f.screen.captureCharFrame()).toContain("PROVIDER:resumed");
+    await f.key("F2");
+    expect(f.screen.captureCharFrame()).toContain("Keep my Home task");
   } finally {
     await f.closeUI();
     f.close();
