@@ -1,4 +1,10 @@
-import { chmodSync, existsSync, mkdirSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
@@ -68,4 +74,12 @@ export const nameSchema = z
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function directory(input: string) {
+  if (!input.trim()) throw new Error("Working directory is required");
+  const cwd = realpathSync(expandPath(input));
+  if (!statSync(cwd).isDirectory())
+    throw new Error("Working directory must be a directory");
+  return cwd;
 }

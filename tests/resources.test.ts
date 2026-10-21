@@ -9,8 +9,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { McpService } from "../src/core/mcps";
-import { SkillService } from "../src/core/skills";
+import { McpService } from "../src/modules/mcps/service";
+import { SkillService } from "../src/modules/skills/service";
 import { fixture } from "./helpers";
 
 const cleanups: (() => void)[] = [];

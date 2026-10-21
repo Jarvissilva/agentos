@@ -3,9 +3,9 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createRoot, flushSync } from "@opentui/react";
-import type { Application } from "../src/core/application";
-import type { ProviderId, ProviderInfo } from "../src/providers/types";
-import { sessions } from "../src/storage/schema";
+import type { Application } from "../src/app";
+import type { ProviderId, ProviderInfo } from "../src/lib/providers/types";
+import { sessions } from "../src/lib/storage/schema";
 import { App } from "../src/tui/app";
 import { fixture } from "./helpers";
 

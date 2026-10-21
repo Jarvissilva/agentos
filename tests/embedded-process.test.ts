@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import {
   EmbeddedProcess,
   persistentTerminal,
-} from "../src/platform/embedded-process";
+} from "../src/lib/platform/embedded-process";
 import { fixture } from "./helpers";
 
 async function until(check: () => boolean) {
@@ -85,7 +85,7 @@ test.skipIf(!Bun.which("tmux"))(
         [
           process.execPath,
           "-e",
-          `import {EmbeddedProcess} from ${JSON.stringify(resolve("src/platform/embedded-process.ts"))};const child=new EmbeddedProcess(${JSON.stringify(spec)},80,24,()=>{});await child.start();await Bun.sleep(100);process.exit(0);`,
+          `import {EmbeddedProcess} from ${JSON.stringify(resolve("src/lib/platform/embedded-process.ts"))};const child=new EmbeddedProcess(${JSON.stringify(spec)},80,24,()=>{});await child.start();await Bun.sleep(100);process.exit(0);`,
         ],
         { stdout: "ignore", stderr: "pipe" },
       );
@@ -144,7 +144,7 @@ test.skipIf(!Bun.which("python3"))(
   "embedded /dev/tty is isolated from the outer terminal for sizing, raw input, and resize",
   async () => {
     const runner = `
-    import {EmbeddedProcess} from ${JSON.stringify(resolve("src/platform/embedded-process.ts"))};
+    import {EmbeddedProcess} from ${JSON.stringify(resolve("src/lib/platform/embedded-process.ts"))};
     const program = ${JSON.stringify(`import os,fcntl,termios,tty,struct,json,signal
 fd=os.open('/dev/tty',os.O_RDWR)
 def report(event):

@@ -1,72 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  lstatSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { basename, join } from "node:path";
+import { lstatSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { and, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
-import { parse, stringify } from "yaml";
-import { z } from "zod";
-import { AutomationService } from "../automations/service";
-import { atomicWrite, redact } from "../platform/files";
-import {
-  type AppPaths,
-  errorMessage,
-  expandPath,
-  nameSchema,
-} from "../platform/paths";
-import { ProviderManager } from "../providers/manager";
-import { providerDefaultsSchema, resolveModel } from "../providers/models";
+import { atomicWrite, redact } from "../../lib/platform/files";
+import { directory, errorMessage } from "../../lib/platform/paths";
+import type { ProviderManager } from "../../lib/providers/manager";
 import type {
   InteractiveRunner,
   ProviderConnection,
-  ProviderDefaults,
   ProviderId,
-  SessionOptions,
-} from "../providers/types";
-import type { AppDatabase } from "../storage/database";
-import {
-  agents,
-  notifications,
-  projects,
-  providerMetadata,
-  type Session,
-  sessions,
-} from "../storage/schema";
-import { McpService } from "./mcps";
-import { cleanSessionTitle, sessionTitle } from "./session-title";
-import { SkillService } from "./skills";
-
-const definitionSchema = z.object({
-  name: nameSchema,
-  description: z.string().default(""),
-});
-export function parseAgent(text: string) {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(text);
-  if (!match)
-    throw new Error(
-      "Agent requires YAML frontmatter between --- lines and Markdown instructions",
-    );
-  const metadata = definitionSchema.parse(parse(match[1] ?? ""));
-  const instructions = z
-    .string()
-    .trim()
-    .min(1, "Agent instructions cannot be empty")
-    .parse(match[2]);
-  return { ...metadata, instructions };
-}
-
-export function directory(input: string) {
-  if (!input.trim()) throw new Error("Working directory is required");
-  const cwd = realpathSync(expandPath(input));
-  if (!statSync(cwd).isDirectory())
-    throw new Error("Working directory must be a directory");
-  return cwd;
-}
+} from "../../lib/providers/types";
+import type { AppDatabase } from "../../lib/storage/database";
+import { type Session, sessions } from "../../lib/storage/schema";
+import type { AgentService } from "../agents/service";
+import type { NotificationService } from "../notifications/service";
+import type { ProjectService } from "../projects/service";
+import type { SettingsService } from "../settings/service";
+import { cleanSessionTitle, sessionTitle } from "./title";
 
 // Include boot and process start identities, so PID reuse never claims that an
 // interrupted session still belongs to a live agentos instance.
@@ -88,143 +38,18 @@ export type SessionLauncher = ((
   ...args: Parameters<InteractiveRunner>
 ) => Promise<number>) & { preflight?: (provider: ProviderId) => void };
 
-export class Application {
+export class SessionService {
   private readonly interactiveOperations = new Set<Promise<Session>>();
   private readonly sessionListeners = new Set<() => void>();
   private syncingTitles?: Promise<number>;
-  readonly skills: SkillService;
-  readonly mcps: McpService;
-  readonly automations: AutomationService;
   constructor(
-    readonly db: AppDatabase,
-    readonly paths: AppPaths,
-    readonly providers = new ProviderManager(),
-  ) {
-    this.skills = new SkillService(db, paths);
-    this.mcps = new McpService(db);
-    this.automations = new AutomationService(this);
-  }
-  private readPreferences() {
-    const file = join(this.paths.config, "preferences.json");
-    try {
-      if (!lstatSync(file).isFile())
-        throw new Error("Preferences must be a regular file");
-      const text = readFileSync(file, "utf8");
-      const value = z
-        .object({
-          provider: z.enum(["codex", "opencode", "agy"]).optional(),
-          defaultDirectory: z.string().min(1).optional(),
-          providerDefaults: z
-            .object({
-              codex: providerDefaultsSchema.optional(),
-              opencode: providerDefaultsSchema.optional(),
-              agy: providerDefaultsSchema.optional(),
-            })
-            .passthrough()
-            .optional(),
-        })
-        .passthrough()
-        .parse(JSON.parse(text));
-      return { file, text, value };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT")
-        return { file, text: "", value: {} };
-      throw error;
-    }
-  }
-  providerDefaults(provider: ProviderId): ProviderDefaults {
-    return this.readPreferences().value.providerDefaults?.[provider] ?? {};
-  }
-  async modelCatalog(provider: string, cwd?: string) {
-    const adapter = this.providers.adapter(provider);
-    if (!adapter.models)
-      throw new Error(`${provider} model discovery is unavailable`);
-    return adapter.models(cwd);
-  }
-  async validateProviderDefaults(
-    provider: ProviderId,
-    defaults: ProviderDefaults,
-    cwd?: string,
-  ): Promise<SessionOptions> {
-    providerDefaultsSchema.parse(defaults);
-    return defaults.model
-      ? resolveModel(await this.modelCatalog(provider, cwd), defaults)
-      : {};
-  }
-  async setProviderDefaults(provider: ProviderId, defaults: ProviderDefaults) {
-    this.providers.adapter(provider);
-    const parsed = providerDefaultsSchema.parse(defaults);
-    await this.validateProviderDefaults(provider, parsed);
-    const { file, text, value } = this.readPreferences();
-    atomicWrite(
-      file,
-      `${JSON.stringify({ ...value, providerDefaults: { ...value.providerDefaults, [provider]: parsed } }, null, 2)}\n`,
-      text,
-    );
-  }
-  preferredProvider() {
-    return this.readPreferences().value.provider;
-  }
-  setPreferredProvider(provider: ProviderId) {
-    this.providers.adapter(provider);
-    const { file, text, value } = this.readPreferences();
-    atomicWrite(
-      file,
-      `${JSON.stringify({ ...value, provider }, null, 2)}\n`,
-      text,
-    );
-  }
-  defaultDirectory() {
-    return this.readPreferences().value.defaultDirectory;
-  }
-  setDefaultDirectory(input?: string) {
-    const { file, text, value } = this.readPreferences();
-    const defaultDirectory = input?.trim() ? directory(input) : undefined;
-    atomicWrite(
-      file,
-      `${JSON.stringify({ ...value, defaultDirectory }, null, 2)}\n`,
-      text,
-    );
-    return defaultDirectory;
-  }
-  async detectProviders() {
-    const list = await this.providers.list();
-    for (const p of list)
-      this.db
-        .insert(providerMetadata)
-        .values({
-          id: p.id,
-          metadata: JSON.stringify(p),
-          checkedAt: Date.now(),
-        })
-        .onConflictDoUpdate({
-          target: providerMetadata.id,
-          set: { metadata: JSON.stringify(p), checkedAt: Date.now() },
-        })
-        .run();
-    return list;
-  }
-  listNotifications() {
-    return this.db
-      .select()
-      .from(notifications)
-      .orderBy(desc(notifications.createdAt))
-      .limit(100)
-      .all();
-  }
-  readNotification(id: string) {
-    this.db
-      .update(notifications)
-      .set({ read: true })
-      .where(eq(notifications.id, id))
-      .run();
-  }
-  removeAgent(id: string) {
-    const a = this.agent(id);
-    const file = this.agentFile(id);
-    unlinkSync(file);
-    this.db.delete(agents).where(eq(agents.id, a.id)).run();
-  }
+    private db: AppDatabase,
+    private providers: ProviderManager,
+    private projects: ProjectService,
+    private agents: AgentService,
+    private settings: SettingsService,
+    private notifications: NotificationService,
+  ) {}
   instructionFile(session: string, kind = "AGENTS.md") {
     if (!["AGENTS.md", "GEMINI.md", "CLAUDE.md"].includes(kind))
       throw new Error("Unsupported instruction filename");
@@ -244,107 +69,6 @@ export class Application {
   saveInstructions(session: string, text: string, kind?: string) {
     const file = this.instructionFile(session, kind);
     atomicWrite(file, text, this.readInstructions(session, kind));
-  }
-
-  listProjects() {
-    return this.db.select().from(projects).orderBy(projects.name).all();
-  }
-  project(id: string) {
-    const result = this.listProjects().find(
-      (p) => p.id === id || p.name === id,
-    );
-    if (!result) throw new Error(`Project not found: ${id}`);
-    return result;
-  }
-  createProject(name: string, description = "") {
-    return this.db
-      .insert(projects)
-      .values({
-        id: randomUUID(),
-        name: nameSchema.parse(name),
-        description,
-        createdAt: Date.now(),
-      })
-      .returning()
-      .get();
-  }
-  updateProject(id: string, input: { name?: string; description?: string }) {
-    const existing = this.project(id);
-    return this.db
-      .update(projects)
-      .set({
-        ...input,
-        name:
-          input.name === undefined
-            ? existing.name
-            : nameSchema.parse(input.name),
-      })
-      .where(eq(projects.id, existing.id))
-      .returning()
-      .get();
-  }
-  removeProject(id: string) {
-    this.db
-      .delete(projects)
-      .where(eq(projects.id, this.project(id).id))
-      .run();
-  }
-
-  listAgents() {
-    return this.db.select().from(agents).orderBy(agents.name).all();
-  }
-  agent(id: string) {
-    const result = this.listAgents().find((a) => a.id === id || a.name === id);
-    if (!result) throw new Error(`Agent not found: ${id}`);
-    return result;
-  }
-  agentFile(id: string) {
-    const record = this.agent(id);
-    if (basename(record.file) !== record.file)
-      throw new Error("Invalid managed agent path");
-    const file = join(this.paths.agents, record.file);
-    if (!lstatSync(file).isFile())
-      throw new Error(
-        "Managed agent must be a regular file, not a symbolic link",
-      );
-    return file;
-  }
-  agentDefinition(id: string) {
-    return parseAgent(readFileSync(this.agentFile(id), "utf8"));
-  }
-  createAgent(name: string, instructions: string, description = "") {
-    const metadata = definitionSchema.parse({ name, description });
-    const body = z.string().trim().min(1).parse(instructions);
-    const file = `${
-      metadata.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "") || "agent"
-    }-${randomUUID().slice(0, 8)}.md`;
-    const path = join(this.paths.agents, file);
-    writeFileSync(path, `---\n${stringify(metadata)}---\n\n${body}\n`, {
-      mode: 0o600,
-      flag: "wx",
-    });
-    try {
-      return this.db
-        .insert(agents)
-        .values({ id: randomUUID(), ...metadata, file, createdAt: Date.now() })
-        .returning()
-        .get();
-    } catch (error) {
-      unlinkSync(path);
-      throw error;
-    }
-  }
-  syncAgent(id: string) {
-    const record = this.agent(id);
-    const definition = this.agentDefinition(record.id);
-    this.db
-      .update(agents)
-      .set({ name: definition.name, description: definition.description })
-      .where(eq(agents.id, record.id))
-      .run();
   }
 
   recoverSessions() {
@@ -512,7 +236,7 @@ export class Application {
   }
   assignSessionProject(id: string, project?: string) {
     const session = this.session(id);
-    const projectId = project ? this.project(project).id : null;
+    const projectId = project ? this.projects.project(project).id : null;
     return this.db
       .update(sessions)
       .set({ projectId })
@@ -530,7 +254,7 @@ export class Application {
     return result;
   }
 
-  newSession(...args: Parameters<Application["createSession"]>) {
+  newSession(...args: Parameters<SessionService["createSession"]>) {
     return this.trackInteractive(this.createSession(...args));
   }
   private trackInteractive(operation: Promise<Session>) {
@@ -559,26 +283,30 @@ export class Application {
       throw new Error(
         "Starting a native session requires an interactive terminal",
       );
-    const project = input.project ? this.project(input.project) : undefined;
-    const agent = input.agent ? this.agent(input.agent) : undefined;
-    const definition = agent ? this.agentDefinition(agent.id) : undefined;
+    const project = input.project
+      ? this.projects.project(input.project)
+      : undefined;
+    const agent = input.agent ? this.agents.agent(input.agent) : undefined;
+    const definition = agent
+      ? this.agents.agentDefinition(agent.id)
+      : undefined;
     const prompt = definition
       ? `agentos role: ${definition.name}\n\n${definition.instructions}\n\n${input.prompt || "Use this role for this conversation and wait for my task."}`
       : input.prompt;
     const title = sessionTitle(input.prompt);
     const cwd = directory(
-      input.cwd ?? this.defaultDirectory() ?? process.cwd(),
+      input.cwd ?? this.settings.defaultDirectory() ?? process.cwd(),
     );
     const adapter = this.providers.adapter(
-      input.provider ?? this.preferredProvider() ?? "codex",
+      input.provider ?? this.settings.preferredProvider() ?? "codex",
     );
     launcher?.preflight?.(adapter.id);
     const info = await adapter.detect();
     if (!info.interactive)
       throw new Error(info.reason ?? "Provider cannot launch native sessions");
-    const options = await this.validateProviderDefaults(
+    const options = await this.settings.validateProviderDefaults(
       adapter.id,
-      this.providerDefaults(adapter.id),
+      this.settings.providerDefaults(adapter.id),
       cwd,
     );
     const id = randomUUID();
@@ -660,7 +388,7 @@ export class Application {
     }
   }
 
-  resumeSession(...args: Parameters<Application["reopenSession"]>) {
+  resumeSession(...args: Parameters<SessionService["reopenSession"]>) {
     return this.trackInteractive(this.reopenSession(...args));
   }
   private async reopenSession(
@@ -788,7 +516,7 @@ export class Application {
     }
   }
   private failed(id: string, error: unknown) {
-    this.automations.notify(
+    this.notifications.notify(
       "Provider session failed; inspect its session details",
     );
     this.db
@@ -804,5 +532,3 @@ export class Application {
       .run();
   }
 }
-
-export type { Session };

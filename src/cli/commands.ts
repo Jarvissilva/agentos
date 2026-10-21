@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Command } from "commander";
-import type { Application } from "../core/application";
-import { runInteractive } from "../platform/process";
+import type { Application } from "../app";
+import { runInteractive } from "../lib/platform/process";
 import { resourceCommands } from "./resources";
 
 export function commands(app: Application) {

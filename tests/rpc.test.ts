@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
-import { CodexRpc } from "../src/providers/codex/rpc";
+import { CodexRpc } from "../src/lib/providers/codex/rpc";
 
 test("Codex RPC handles Unix WebSocket handshake, errors, and closed connections", async () => {
   const dir = mkdtempSync("/tmp/agentos-rpc-test-");

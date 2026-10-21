@@ -1,7 +1,7 @@
 import type { KeyEvent } from "@opentui/core";
 import { useEffect, useState } from "react";
-import { type Application, directory } from "../../core/application";
-import type { ProviderInfo } from "../../providers/types";
+import { type Application, directory } from "../../app";
+import type { ProviderInfo } from "../../lib/providers/types";
 import { matches } from "../commands";
 import {
   CommandBox,

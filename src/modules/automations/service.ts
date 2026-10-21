@@ -12,19 +12,23 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { and, desc, eq } from "drizzle-orm";
 import { parse, stringify } from "yaml";
-import type { Application } from "../core/application";
-import { atomicWrite, processIdentity, redact } from "../platform/files";
-import { errorMessage } from "../platform/paths";
+import { atomicWrite, processIdentity, redact } from "../../lib/platform/files";
+import type { AppPaths } from "../../lib/platform/paths";
+import { errorMessage } from "../../lib/platform/paths";
+import type { ProviderManager } from "../../lib/providers/manager";
+import type { AppDatabase } from "../../lib/storage/database";
 import {
   automationSteps,
   automations,
   directoryLocks,
-  notifications,
   runLogs,
   runs,
   schedules,
   stepRuns,
-} from "../storage/schema";
+} from "../../lib/storage/schema";
+import type { AgentService } from "../agents/service";
+import type { NotificationService } from "../notifications/service";
+import type { ProjectService } from "../projects/service";
 import {
   automationSchema,
   nextOccurrence,
@@ -39,7 +43,7 @@ export class AutomationService {
     const child = spawn(
       process.execPath,
       [
-        fileURLToPath(new URL("../index.ts", import.meta.url)),
+        fileURLToPath(new URL("../../index.ts", import.meta.url)),
         "automations",
         ...(retryId ? ["retry", retryId] : ["run", a.id]),
       ],
@@ -48,9 +52,9 @@ export class AutomationService {
         detached: true,
         env: {
           ...process.env,
-          XDG_DATA_HOME: join(this.app.paths.data, ".."),
-          XDG_CONFIG_HOME: join(this.app.paths.config, ".."),
-          XDG_CACHE_HOME: join(this.app.paths.cache, ".."),
+          XDG_DATA_HOME: join(this.paths.data, ".."),
+          XDG_CONFIG_HOME: join(this.paths.config, ".."),
+          XDG_CACHE_HOME: join(this.paths.cache, ".."),
         },
       },
     );
@@ -61,13 +65,17 @@ export class AutomationService {
     child.unref();
     return child.pid;
   }
-  constructor(private app: Application) {}
+  constructor(
+    private db: AppDatabase,
+    private paths: AppPaths,
+    private providers: ProviderManager,
+    private projects: ProjectService,
+    private agents: AgentService,
+    private notifications: NotificationService,
+  ) {}
   private jobs = new Set<Promise<unknown>>();
   async drain() {
     await Promise.allSettled([...this.jobs]);
-  }
-  private get db() {
-    return this.app.db;
   }
   list() {
     return this.db.select().from(automations).all();
@@ -81,7 +89,7 @@ export class AutomationService {
   }
   assignProject(id: string, project?: string) {
     const automation = this.get(id);
-    const projectId = project ? this.app.project(project).id : null;
+    const projectId = project ? this.projects.project(project).id : null;
     return this.db
       .update(automations)
       .set({ projectId })
@@ -102,7 +110,7 @@ export class AutomationService {
       );
     if (existing && existing.slug !== d.slug)
       throw new Error("Automation slug is immutable");
-    const directory = join(this.app.paths.data, "automations", d.slug),
+    const directory = join(this.paths.data, "automations", d.slug),
       file = join(directory, "automation.yaml");
     if (!existing && existsSync(directory))
       throw new Error("Managed automation directory already exists");
@@ -194,7 +202,7 @@ export class AutomationService {
         "Automation has run history; disable it to retain audit records",
       );
     this.db.delete(automations).where(eq(automations.id, a.id)).run();
-    rmSync(join(this.app.paths.data, "automations", a.slug), {
+    rmSync(join(this.paths.data, "automations", a.slug), {
       recursive: true,
     });
   }
@@ -222,15 +230,7 @@ export class AutomationService {
     };
   }
   notify(message: string, runId?: string) {
-    this.db
-      .insert(notifications)
-      .values({
-        id: randomUUID(),
-        message: redact(message),
-        runId,
-        createdAt: Date.now(),
-      })
-      .run();
+    this.notifications.notify(message, runId);
   }
   recover() {
     this.db.transaction(
@@ -473,7 +473,7 @@ export class AutomationService {
           throw new Error(
             "Previous step has no compatible native session identity",
           );
-        const adapter = this.app.providers.adapter(step.provider);
+        const adapter = this.providers.adapter(step.provider);
         if (!adapter.execute)
           throw new Error(
             `${step.provider} does not support background execution`,
@@ -504,7 +504,7 @@ export class AutomationService {
           try {
             const instructions =
               step.agent && step.session === "new"
-                ? this.app.agentDefinition(step.agent).instructions
+                ? this.agents.agentDefinition(step.agent).instructions
                 : "";
             const prompt = `${instructions ? `agentos role instructions:\n${instructions}\n\n` : ""}${step.prompt}\n\nSupporting files directory: ${support}${step.includePrevious ? `\n\nPrevious step result (excerpt):\n${previousText.slice(-12000)}` : ""}`;
             const result = await adapter.execute({

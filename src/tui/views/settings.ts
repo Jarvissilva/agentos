@@ -1,5 +1,5 @@
-import type { ProviderId } from "../../providers/types";
-import { installWorker, workerStatus } from "../../scheduler/systemd";
+import type { ProviderId } from "../../lib/providers/types";
+import { installWorker, workerStatus } from "../../lib/scheduler/systemd";
 import { BRAND } from "../constants";
 import { prettyPath } from "../theme";
 import type { Command, ResourceContext, ResourceView, Row } from "../types";

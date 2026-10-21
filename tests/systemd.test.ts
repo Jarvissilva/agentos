@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { appPaths } from "../src/platform/paths";
-import { unitContents } from "../src/scheduler/systemd";
+import { appPaths } from "../src/lib/platform/paths";
+import { unitContents } from "../src/lib/scheduler/systemd";
 
 test("systemd unit uses absolute runtime paths, private umask, and explicit persistent XDG storage", () => {
   const unit = unitContents(

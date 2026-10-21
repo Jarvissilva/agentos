@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 test.skipIf(!Bun.which("python3"))(
   "a provider that exits in raw mode leaves the PTY settings restored",
   async () => {
-    const runner = `import {runInteractive} from ${JSON.stringify(fileURLToPath(new URL("../src/platform/process.ts", import.meta.url)))};
+    const runner = `import {runInteractive} from ${JSON.stringify(fileURLToPath(new URL("../src/lib/platform/process.ts", import.meta.url)))};
     const code = await runInteractive(process.execPath, ["-e", "process.stdin.setRawMode(true); process.exit(9)"], process.cwd());
     if (code !== 9) throw new Error("Native exit code was lost");
     try { await runInteractive("/missing-agentos-test-executable", [], process.cwd()); throw new Error("Missing executable was accepted"); }

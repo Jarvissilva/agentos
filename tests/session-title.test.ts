@@ -5,7 +5,7 @@ import {
   sessionLabel,
   sessionTitle,
   shortenSessionTitle,
-} from "../src/core/session-title";
+} from "../src/modules/sessions/title";
 
 test("session titles normalize whitespace, controls, and terminal escapes", () => {
   expect(sessionTitle("  Fix\n\tcheckout   flow  ")).toBe("Fix checkout flow");

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import type { SessionLauncher, TerminalHandoff } from "../../core/application";
-import { type Application, directory } from "../../core/application";
-import type { ProviderId, ProviderInfo } from "../../providers/types";
+import type { SessionLauncher, TerminalHandoff } from "../../app";
+import { type Application, directory } from "../../app";
+import type { ProviderId, ProviderInfo } from "../../lib/providers/types";
 import {
   Backdrop,
   CommandBox,

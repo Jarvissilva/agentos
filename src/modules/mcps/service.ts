@@ -18,15 +18,15 @@ import {
   fingerprint,
   processIdentity,
   redact,
-} from "../platform/files";
+} from "../../lib/platform/files";
 import {
   nativeConfiguration,
   nativeMcpPath,
-  translateMcp,
-} from "../providers/configuration";
-import type { AppDatabase } from "../storage/database";
-import { mcpInstalls, mcps } from "../storage/schema";
-import { slugSchema } from "./skills";
+} from "../../lib/providers/configuration";
+import type { AppDatabase } from "../../lib/storage/database";
+import { mcpInstalls, mcps } from "../../lib/storage/schema";
+import { slugSchema } from "../skills/service";
+import { translateMcp } from "./configuration";
 
 const variable = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 export const mcpSchema = z.discriminatedUnion("transport", [

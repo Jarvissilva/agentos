@@ -5,14 +5,14 @@ import {
   useTerminalDimensions,
 } from "@opentui/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { Application, SessionLauncher } from "../../core/application";
-import { sessionLabel } from "../../core/session-title";
+import type { Application, SessionLauncher } from "../../app";
 import {
   type EmbeddedCommand,
   EmbeddedProcess,
-} from "../../platform/embedded-process";
-import { errorMessage } from "../../platform/paths";
-import type { Session } from "../../storage/schema";
+} from "../../lib/platform/embedded-process";
+import { errorMessage } from "../../lib/platform/paths";
+import type { Session } from "../../lib/storage/schema";
+import { sessionLabel } from "../../modules/sessions/title";
 import { providerThemeSequence } from "../provider-theme";
 import { clip, colors } from "../theme";
 
@@ -27,6 +27,7 @@ interface Tab {
   invocation?: Invocation;
   started?: boolean;
   ended?: boolean;
+  endedAt?: number;
   error?: string;
   dashboard?: boolean;
   unread?: boolean;
@@ -36,6 +37,10 @@ export interface WorkspaceTabProps {
   attached: boolean;
   sessionLauncher: SessionLauncher;
   activateSession: (id: string) => boolean;
+  /** Timestamp of the most recent provider exit for this tab, if any. */
+  endedAt?: number;
+  /** Provider exit error text, when the embedded session failed or exited non-zero. */
+  endedError?: string;
 }
 
 export function SessionTabs({
@@ -213,6 +218,7 @@ export function SessionTabs({
             ended: false,
             error: undefined,
             dashboard: false,
+            endedAt: undefined,
           });
           setActiveId(id);
         });
@@ -307,6 +313,8 @@ export function SessionTabs({
                 attached: !!tab.started,
                 sessionLauncher: launch(tab.id),
                 activateSession,
+                endedAt: tab.endedAt,
+                endedError: tab.error,
               })}
             </box>
             {tab.invocation ? (
@@ -329,7 +337,13 @@ export function SessionTabs({
                       update(tab.id, { unread: true });
                   }}
                   ended={(error) => {
-                    if (alive.current) update(tab.id, { ended: true, error });
+                    if (!alive.current) return;
+                    update(tab.id, {
+                      ended: true,
+                      error,
+                      dashboard: true,
+                      endedAt: Date.now(),
+                    });
                   }}
                 />
                 {tab.error ? (

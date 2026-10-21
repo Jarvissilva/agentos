@@ -28,9 +28,9 @@ Use `/directory`, `/agent`, and `/project` on the home screen to configure the n
 | `/` in an empty home input / `/` on resource pages | Open the command palette |
 | Ctrl+P | Open commands while preserving the message draft |
 | Up / `k`, Down / `j` | Move through the palette, a list, or the session wizard; scroll a detail view |
-| Left / `h` | Back one level (detail → list → home) |
-| Right / `l` | Open the selected row in list views |
-| Enter | Send the home message / run a command / open a row |
+| Left / `h` | Back one level (detail → list → home); in Sessions, Left moves the project filter |
+| Right / `l` | Open the selected row in list views; in Sessions, Right moves the project filter |
+| Enter | Send the home message / run a command / open a row; in Sessions, resume the selected session directly |
 | Esc | Close the palette, cancel a form, or go back |
 | `n` | Create an item in the current resource modal |
 | `r` | Rename the selected session in Sessions |
@@ -45,7 +45,7 @@ Commands include:
 
 | Group | Commands |
 | --- | --- |
-| Context | Home: `/directory`, `/agent`, `/project`; resources: `/rename`, `/project`, `/open`, `/resume`, `/history`, `/edit`, `/instructions`, `/delete`, `/install`, `/uninstall`, `/disable`, `/run`, `/runs`, `/toggle`, `/cancel`, `/retry` |
+| Context | Home: `/directory`, `/agent`, `/project`; resources: `/rename`, `/project`, `/details`, `/open`, `/resume`, `/history`, `/edit`, `/instructions`, `/delete`, `/install`, `/uninstall`, `/disable`, `/run`, `/runs`, `/toggle`, `/cancel`, `/retry` |
 | Create | `/new project`, `/new agent`, `/new skill`, `/new mcp`, `/new automation`, `/new session`, `/import agent\|skill\|mcp\|automation` |
 | Navigate | `/settings`, `/sessions`, `/projects`, `/automations`, `/agents`, `/skills`, `/mcps`, `/providers`, `/runs`, `/notifications` |
 | System | `/provider`, `/back`, `/home`, `/help`, `/refresh`, `/scheduler install`, `/scheduler status`, `/quit` |
@@ -61,10 +61,10 @@ Interactive sessions launched in the agentos TUI now open the provider’s own i
 - **Ctrl+T:** open a blank session tab; enter a task to launch its provider.
 - **Ctrl+1–9:** select a tab. **Alt+1–9** and **Ctrl+PageUp/PageDown** are alternatives when a terminal cannot distinguish Ctrl+number keys. Tabs can also be clicked.
 - **Ctrl+W:** close the tab and detach its terminal frontend. This does not delete its saved conversation or explicitly stop its background service.
-- **F2:** switch between the provider terminal and that tab’s agentos dashboard. Provider slash commands remain provider commands; open the dashboard to use agentos commands. Opening the dashboard also synchronizes provider session names.
+- **F2:** switch between the provider terminal and that tab’s agentos dashboard. Provider slash commands remain provider commands; open the dashboard to use agentos commands. Opening the dashboard also synchronizes provider session names. When the provider exits on its own — for example after its `/exit` — the tab returns to the agentos home screen automatically and shows the outcome in the status line; press F2 to view the ended terminal until you close it.
 - **Ctrl+Q:** quit agentos and disconnect embedded frontends. Codex and OpenCode use their native background services; agentos does not shut those services down. Continuation depends on those provider services being enabled and running, and pending approvals can still require your attention.
 
-A dot on an inactive tab indicates new terminal output, not confirmed task completion. Exited or disconnected terminals remain visible until closed. To reconnect after restarting agentos, open Sessions and use `/resume`; resuming a session already open in another tab selects that tab. Saved model defaults still apply only when creating a session.
+A dot on an inactive tab indicates new terminal output, not confirmed task completion. Exiting a provider, or a failed launch, returns that tab to the home screen and marks the tab ended; the ended or disconnected terminal stays available behind F2 until closed with Ctrl+W. To reconnect after restarting agentos, open Sessions and use `/resume`; resuming a session already open in another tab selects that tab. Saved model defaults still apply only when creating a session.
 
 **Agy requires `tmux` for embedded tabs.** Agentos uses a private socket and configuration, separate from your personal tmux server, to keep each Agy terminal alive after tab or application exit. Resuming from the agentos TUI reconnects to the same running terminal. Agentos does not install tmux or register Agy’s remote-control daemon. Stop work using the provider’s own controls before detaching when you want it to stop. These background processes survive UI exit, not machine shutdown.
 
@@ -101,7 +101,7 @@ Provider behavior:
 
 Managed session status describes preparation/terminal attachment, not task completion. `idle` means the native TUI exited successfully; its native daemon may still be working. Conversations opened with native `/new` or `/fork` are not automatically imported. A process-identity guard prevents simultaneous managed attachment and recovers stale records after interruption.
 
-Project details show their sessions and automations. From a project, `/sessions` and `/automations` open filtered lists; use `/home` to return to global navigation. On a session or automation, `/project` assigns a group by name or ID; leave its field empty to clear membership. Grouping is SQLite metadata and is not part of automation YAML.
+Project details show their sessions and automations. From a project, `/sessions` and `/automations` open filtered lists; use `/home` to return to global navigation. Sessions also show a filter strip at the top with `All` followed by each project name; move between filters with Left/Right and press Enter to open (resume) the selected session. `/details` still opens the session's metadata view. On a session or automation, `/project` assigns a group by name or ID; leave its field empty to clear membership. Grouping is SQLite metadata and is not part of automation YAML.
 
 ```bash
 agentos sessions project <session-id> Wizyz
@@ -301,6 +301,6 @@ bun run dev                      # Watch mode; use start for native sessions
 bun run db:generate              # After intentional schema edits
 ```
 
-Drizzle migration history is committed in `src/storage/migrations` and applied automatically when the database opens.
+Drizzle migration history is committed in `src/lib/storage/migrations` and applied automatically when the database opens.
 
-Application services are independent of the TUI. Native execution and configuration formats live under `providers/`; storage/migrations, OS process handling, and scheduling remain separate. Tests isolate their databases/configs and mock provider processes; real provider validation is recorded in [implementation notes](docs/implementation.md).
+Application services live under `src/modules/` and are independent of the TUI and CLI. `src/app.ts` coordinates those services. Terminal UI lives under `src/tui/`, and CLI commands under `src/cli/`. Infrastructure lives under `src/lib/`: native provider integrations in `providers/`, database and migrations in `storage/`, OS process handling in `platform/`, and systemd integration in `scheduler/`. Tests isolate their databases/configs and mock provider processes; real provider validation is recorded in [implementation notes](docs/implementation.md).

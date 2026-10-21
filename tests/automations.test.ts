@@ -2,13 +2,16 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
+import { ProviderManager } from "../src/lib/providers/manager";
+import type {
+  ExecutionInput,
+  ExecutionResult,
+} from "../src/lib/providers/types";
+import { directoryLocks, runs, schedules } from "../src/lib/storage/schema";
 import {
   nextOccurrence,
   validateAutomation,
-} from "../src/automations/definition";
-import { ProviderManager } from "../src/providers/manager";
-import type { ExecutionInput, ExecutionResult } from "../src/providers/types";
-import { directoryLocks, runs, schedules } from "../src/storage/schema";
+} from "../src/modules/automations/definition";
 import { fixture } from "./helpers";
 
 class Providers extends ProviderManager {

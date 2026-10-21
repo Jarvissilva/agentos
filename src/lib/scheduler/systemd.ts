@@ -11,7 +11,7 @@ function quote(s: string) {
   return `"${s.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%").replaceAll("$", "$$")}"`;
 }
 export function unitContents(paths: AppPaths) {
-  const file = fileURLToPath(new URL("../index.ts", import.meta.url));
+  const file = fileURLToPath(new URL("../../index.ts", import.meta.url));
   const environment =
     ["DATA", "CONFIG", "CACHE"]
       .map((key) => {

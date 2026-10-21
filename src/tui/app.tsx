@@ -6,19 +6,15 @@ import {
   useTerminalDimensions,
 } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  type Application,
-  directory,
-  type TerminalHandoff,
-} from "../core/application";
-import { redact } from "../platform/files";
-import { errorMessage } from "../platform/paths";
+import { type Application, directory, type TerminalHandoff } from "../app";
+import { redact } from "../lib/platform/files";
+import { errorMessage } from "../lib/platform/paths";
 import type {
   ModelCatalog,
   ProviderDefaults,
   ProviderId,
   ProviderInfo,
-} from "../providers/types";
+} from "../lib/providers/types";
 import { matchCommands, matches } from "./commands";
 import { Form, ModalSurface } from "./components";
 import { ResourceModal } from "./components/resource-modal";
@@ -68,6 +64,8 @@ function Workspace({
   attached,
   sessionLauncher,
   activateSession,
+  endedAt,
+  endedError,
 }: { app: Application } & WorkspaceTabProps) {
   const renderer = useRenderer();
   const { width: terminalWidth, height: screenHeight } =
@@ -92,6 +90,7 @@ function Workspace({
   const [commandOpen, setCommandOpen] = useState(false);
   const [menuSelected, setMenuSelected] = useState(0);
   const pickerEpoch = useRef(0);
+  const handledEnd = useRef(0);
   const [picker, setPicker] = useState<Picker | null>(null);
   const [wizard, setWizard] = useState(false);
   const [form, setForm] = useState<FormSpec | null>(null);
@@ -201,6 +200,27 @@ function Workspace({
     clearFeedback();
     closePrompt();
   };
+
+  // A provider exit (for example the provider's own /exit) returns this tab to
+  // the home screen and surfaces the outcome in the status line.
+  useEffect(() => {
+    if (!endedAt || handledEnd.current === endedAt) return;
+    handledEnd.current = endedAt;
+    pickerEpoch.current++;
+    setCommandOpen(false);
+    setPicker(null);
+    setInput("");
+    setMenuSelected(0);
+    setView({ kind: "home" });
+    setSelected(0);
+    setReport(null);
+    setRunFilter(null);
+    setProjectFilter(null);
+    setError("");
+    setNotice("");
+    if (endedError) setError(redact(endedError));
+    else setNotice("Session ended");
+  }, [endedAt, endedError]);
 
   const openSection = (section: SectionKey, group?: GroupFilter) => {
     if (section === "sessions")
@@ -397,6 +417,7 @@ function Workspace({
     setConfirm,
     setReport,
     setRunFilter,
+    setProjectFilter,
     setDefaultDirectory,
     setHomeDirectory,
     refresh,
@@ -436,6 +457,12 @@ function Workspace({
     view.kind === "detail" ? rows.find((row) => row.id === view.id) : undefined;
   const contextRow = view.kind === "detail" ? detailRow : selectedRow;
   const activeCopy = activeSection ? resources[activeSection].copy : null;
+  const activeFilters = activeSection
+    ? resources[activeSection].filters
+    : undefined;
+  const activeFilterIndex = activeSection
+    ? (resources[activeSection].filterIndex ?? 0)
+    : 0;
   const notificationsUnread = app
     .listNotifications()
     .filter((item) => !item.read).length;
@@ -905,6 +932,24 @@ function Workspace({
         }
       }
 
+      if (
+        plain &&
+        !detailVisible &&
+        (key.name === "left" || key.name === "right")
+      ) {
+        const section = view.kind === "section" ? activeSection : undefined;
+        const filters = section ? resources[section].filters : undefined;
+        if (section && filters && filters.length > 1) {
+          key.preventDefault();
+          const current = resources[section].filterIndex ?? 0;
+          const next =
+            (current + (key.name === "right" ? 1 : -1) + filters.length) %
+            filters.length;
+          resources[section].selectFilter?.(next);
+          return;
+        }
+      }
+
       if (plain && (key.name === "left" || key.name === "h")) {
         key.preventDefault();
         back();
@@ -1067,6 +1112,8 @@ function Workspace({
       detailScroll={detailScroll}
       activeCopy={activeCopy}
       activeSection={activeSection}
+      filters={activeFilters}
+      filterIndex={activeFilterIndex}
       providers={providers}
       paletteProviders={paletteProviders}
       paletteCommands={paletteCommands}

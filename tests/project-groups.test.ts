@@ -4,8 +4,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { commands } from "../src/cli/commands";
-import { appPaths, initializePaths } from "../src/platform/paths";
-import { openDatabase } from "../src/storage/database";
+import { appPaths, initializePaths } from "../src/lib/platform/paths";
+import { openDatabase } from "../src/lib/storage/database";
 import { fixture } from "./helpers";
 
 test("upgrading the previous schema preserves native identities, memberships, directories, and runs", () => {
@@ -19,7 +19,7 @@ test("upgrading the previous schema preserves native identities, memberships, di
       "CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric)",
     );
     for (const migration of readMigrationFiles({
-      migrationsFolder: join(import.meta.dir, "../src/storage/migrations"),
+      migrationsFolder: join(import.meta.dir, "../src/lib/storage/migrations"),
     }).slice(0, 2)) {
       for (const statement of migration.sql) old.exec(statement);
       old

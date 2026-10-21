@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
+import { Application } from "./app";
 import { commands } from "./cli/commands";
-import { Application } from "./core/application";
-import { redact } from "./platform/files";
-import { appPaths, errorMessage } from "./platform/paths";
-import { openDatabase } from "./storage/database";
+import { redact } from "./lib/platform/files";
+import { appPaths, errorMessage } from "./lib/platform/paths";
+import { openDatabase } from "./lib/storage/database";
 
 let storage: ReturnType<typeof openDatabase> | undefined;
 try {

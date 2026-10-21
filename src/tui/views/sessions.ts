@@ -1,4 +1,4 @@
-import { sessionLabel } from "../../core/session-title";
+import { sessionLabel } from "../../modules/sessions/title";
 import { relativeTime, sessionMark } from "../theme";
 import type { Command, ResourceContext, ResourceView, Row } from "../types";
 import { resourceForms } from "./forms";
@@ -9,6 +9,9 @@ export function sessionsView(context: ResourceContext): ResourceView {
     setForm,
     setNotice,
     setReport,
+    setSelected,
+    setProjectFilter,
+    setView,
     refresh,
     perform,
     handoff,
@@ -118,6 +121,22 @@ export function sessionsView(context: ResourceContext): ResourceView {
       };
     });
 
+  const filters = [
+    { id: null, name: "All" },
+    ...projects.map((project) => ({ id: project.id, name: project.name })),
+  ];
+  const filterIndex = projectFilter
+    ? Math.max(
+        0,
+        filters.findIndex((filter) => filter.id === projectFilter.id),
+      )
+    : 0;
+  const selectFilter = (index: number) => {
+    const filter = filters[index];
+    setProjectFilter(filter?.id ? { id: filter.id, name: filter.name } : null);
+    setSelected(0);
+  };
+
   const creation: Command = {
     name: "new session",
     description: "Launch a native provider session",
@@ -159,6 +178,15 @@ export function sessionsView(context: ResourceContext): ResourceView {
       );
       contextCommands.push(
         {
+          name: "details",
+          description: `Inspect ${row.name} metadata`,
+          group: "context",
+          run: () => {
+            setView({ kind: "detail", section: "sessions", id: row.id });
+            setReport(null);
+          },
+        },
+        {
           name: "instructions",
           description: `Edit AGENTS.md for ${row.name}`,
           group: "context",
@@ -182,5 +210,12 @@ export function sessionsView(context: ResourceContext): ResourceView {
     },
     sectionCommands: [],
     creation,
+    filters,
+    filterIndex,
+    selectFilter,
+    open: (row) => {
+      resumeSession(row.id);
+      return true;
+    },
   };
 }

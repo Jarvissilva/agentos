@@ -3,7 +3,7 @@
   "files": {
     "includes": [
       "src/**",
-      "!src/storage/migrations",
+      "!src/lib/storage/migrations",
       "tests/**",
       "scripts/**",
       "*.json",

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createRoot, flushSync } from "@opentui/react";
-import { sessions } from "../src/storage/schema";
+import { sessions } from "../src/lib/storage/schema";
 import { App } from "../src/tui/app";
 import { fixture } from "./helpers";
 
@@ -516,6 +516,103 @@ test("r renames the selected session and refreshes the session list", async () =
     }
     expect(f.app.session("renamable-session").title).toBe("Renamed from r");
     expect(screen.captureCharFrame()).toContain("Renamed from r");
+  } finally {
+    root.unmount();
+    await screen.dispose();
+    f.close();
+  }
+});
+
+test("sessions filter strip selects projects with arrows and Enter resumes directly", async () => {
+  const f = fixture();
+  const alpha = f.app.createProject("Alpha");
+  const beta = f.app.createProject("Beta");
+  for (const [id, projectId, title] of [
+    ["alpha-session", alpha.id, "Alpha chat"],
+    ["beta-session", beta.id, "Beta chat"],
+    ["loose-session", null, "Loose chat"],
+  ] as const) {
+    f.storage.db
+      .insert(sessions)
+      .values({
+        id,
+        projectId,
+        provider: "codex",
+        providerVersion: "test",
+        cwd: f.root,
+        title,
+        status: "idle",
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .run();
+  }
+  const resumed: string[] = [];
+  f.app.resumeSession = (async (id: string) => {
+    resumed.push(id);
+    return f.app.session(id);
+  }) as unknown as typeof f.app.resumeSession;
+  const screen = await createTestRenderer({ width: 110, height: 40 });
+  const root = createRoot(screen.renderer);
+  const press = (key: string) =>
+    flushSync(() => screen.mockInput.pressKey(key));
+  const type = (text: string) =>
+    flushSync(() => {
+      for (const char of text) screen.mockInput.pressKey(char);
+    });
+  const enter = () => flushSync(() => screen.mockInput.pressEnter());
+  const arrow = (direction: "left" | "right") =>
+    flushSync(() => screen.mockInput.pressArrow(direction));
+  try {
+    flushSync(() => root.render(<App app={f.app} />));
+    await screen.flush();
+    press("/");
+    await screen.flush();
+    type("sessions");
+    enter();
+    await screen.flush();
+
+    let frame = screen.captureCharFrame();
+    expect(frame).toContain("[All]");
+    expect(frame).toContain("Alpha chat");
+    expect(frame).toContain("Beta chat");
+    expect(frame).toContain("Loose chat");
+
+    arrow("right");
+    await screen.flush();
+    frame = screen.captureCharFrame();
+    expect(frame).toContain("[Alpha]");
+    expect(frame).toContain("Alpha chat");
+    expect(frame).not.toContain("Beta chat");
+    expect(frame).not.toContain("Loose chat");
+
+    arrow("right");
+    await screen.flush();
+    frame = screen.captureCharFrame();
+    expect(frame).toContain("[Beta]");
+    expect(frame).toContain("Beta chat");
+    expect(frame).not.toContain("Alpha chat");
+
+    arrow("right");
+    await screen.flush();
+    expect(screen.captureCharFrame()).toContain("[All]");
+    expect(screen.captureCharFrame()).toContain("Alpha chat");
+
+    arrow("left");
+    await screen.flush();
+    expect(screen.captureCharFrame()).toContain("[Beta]");
+
+    arrow("left");
+    await screen.flush();
+    expect(screen.captureCharFrame()).toContain("[Alpha]");
+
+    enter();
+    const deadline = Date.now() + 2000;
+    while (resumed.length === 0 && Date.now() < deadline) {
+      await Bun.sleep(20);
+      await screen.flush();
+    }
+    expect(resumed).toEqual(["alpha-session"]);
   } finally {
     root.unmount();
     await screen.dispose();

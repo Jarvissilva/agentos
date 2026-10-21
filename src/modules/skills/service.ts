@@ -16,11 +16,11 @@ import { dirname, join, resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
-import { atomicWrite } from "../platform/files";
-import type { AppPaths } from "../platform/paths";
-import { nativeSkillRoots } from "../providers/configuration";
-import type { AppDatabase } from "../storage/database";
-import { skillLinks, skills } from "../storage/schema";
+import { atomicWrite } from "../../lib/platform/files";
+import type { AppPaths } from "../../lib/platform/paths";
+import { nativeSkillRoots } from "../../lib/providers/configuration";
+import type { AppDatabase } from "../../lib/storage/database";
+import { skillLinks, skills } from "../../lib/storage/schema";
 export const slugSchema = z
   .string()
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)

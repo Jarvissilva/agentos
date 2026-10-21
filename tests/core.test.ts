@@ -9,9 +9,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { parseAgent } from "../src/core/application";
-import { appPaths } from "../src/platform/paths";
-import { openDatabase } from "../src/storage/database";
+import { parseAgent } from "../src/app";
+import { appPaths } from "../src/lib/platform/paths";
+import { openDatabase } from "../src/lib/storage/database";
 import { fixture } from "./helpers";
 
 const fixtures: ReturnType<typeof fixture>[] = [];

@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import * as TOML from "@iarna/toml";
 import { applyEdits, modify, type ParseError, parse } from "jsonc-parser";
-import { atomicWrite } from "../platform/files";
+import { atomicWrite } from "../lib/platform/files";
 import { colors } from "./theme";
 
 // Keep ANSI meanings (errors, success, warnings) while matching the host UI.

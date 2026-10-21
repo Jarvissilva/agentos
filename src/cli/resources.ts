@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
 import type { Command } from "commander";
 import { parse } from "yaml";
-import { type Application, parseAgent } from "../core/application";
-import { runInteractive } from "../platform/process";
-import { installWorker, stopWorker, workerStatus } from "../scheduler/systemd";
+import { type Application, parseAgent } from "../app";
+import { runInteractive } from "../lib/platform/process";
+import {
+  installWorker,
+  stopWorker,
+  workerStatus,
+} from "../lib/scheduler/systemd";
 export async function editFile(file: string, cwd = process.cwd()) {
   const code = await runInteractive(
     process.env.VISUAL || process.env.EDITOR || "vi",

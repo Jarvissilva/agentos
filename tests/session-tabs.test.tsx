@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import { EmbeddedTerminalRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createRoot, flushSync } from "@opentui/react";
-import { EmbeddedProcess } from "../src/platform/embedded-process";
-import { ProviderManager } from "../src/providers/manager";
-import type { ProviderAdapter } from "../src/providers/types";
+import { EmbeddedProcess } from "../src/lib/platform/embedded-process";
+import { ProviderManager } from "../src/lib/providers/manager";
+import type { ProviderAdapter } from "../src/lib/providers/types";
 import { App } from "../src/tui/app";
 import { fixture } from "./helpers";
 
@@ -13,6 +13,7 @@ class Providers extends ProviderManager {
   launches = 0;
   failLaunch = false;
   paintBounds = false;
+  exitOnLaunch = false;
   override adapter(): ProviderAdapter {
     return {
       id: "codex",
@@ -41,7 +42,9 @@ class Providers extends ProviderManager {
               "-e",
               this.paintBounds
                 ? `process.stdin.setRawMode(true);const draw=()=>{const [rows,cols]=require("node:child_process").execFileSync("stty",["size"],{stdio:["inherit","pipe","inherit"]}).toString().trim().split(" ").map(Number);process.stdout.write("\\x1b[2J\\x1b[HSIZE:"+cols+"x"+rows+"\\x1b[1;"+(cols-4)+"HRIGHT\\x1b["+rows+";1HBOTTOM")};process.on("SIGWINCH",draw);draw();process.stdin.resume();`
-                : `process.stdin.setRawMode(true);console.log("PROVIDER:"+${JSON.stringify(prompt ?? "resumed")});process.stdin.on("data",bytes=>console.log("KEY:"+bytes.toString()));setInterval(()=>{},100);`,
+                : this.exitOnLaunch
+                  ? `process.stdin.setRawMode(true);console.log("PROVIDER:"+${JSON.stringify(prompt ?? "resumed")});setTimeout(()=>process.exit(0),60);`
+                  : `process.stdin.setRawMode(true);console.log("PROVIDER:"+${JSON.stringify(prompt ?? "resumed")});process.stdin.on("data",bytes=>console.log("KEY:"+bytes.toString()));setInterval(()=>{},100);`,
             ],
             cwd,
           );
@@ -266,9 +269,46 @@ test("failed embedded startup leaves the task draft available on the dashboard",
     await f.type("Keep this failed launch draft");
     await f.enter();
     await f.until(() => f.app.listSessions()[0]?.status === "failed");
+    await f.until(() =>
+      f.screen.captureCharFrame().includes("Keep this failed launch draft"),
+    );
+  } finally {
+    await f.closeUI();
+    f.close();
+    if (input) Object.defineProperty(process.stdin, "isTTY", input);
+    else Reflect.deleteProperty(process.stdin, "isTTY");
+    if (output) Object.defineProperty(process.stdout, "isTTY", output);
+    else Reflect.deleteProperty(process.stdout, "isTTY");
+  }
+});
+
+test("a provider exit returns the tab to the home screen automatically", async () => {
+  const input = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+  const output = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+  Object.defineProperty(process.stdin, "isTTY", {
+    configurable: true,
+    value: true,
+  });
+  Object.defineProperty(process.stdout, "isTTY", {
+    configurable: true,
+    value: true,
+  });
+  const f = await setup();
+  f.providers.exitOnLaunch = true;
+  try {
+    await f.type("Done");
+    await f.enter();
+    await f.until(() => f.app.listSessions()[0]?.status === "idle");
+    await f.until(() =>
+      f.screen.captureCharFrame().includes("What would you like to work on?"),
+    );
+    const frame = f.screen.captureCharFrame();
+    expect(frame).toContain("What would you like to work on?");
+    expect(frame).toContain("Session ended");
+    expect(frame).toContain(" ○");
     await f.key("F2");
-    expect(f.screen.captureCharFrame()).toContain(
-      "Keep this failed launch draft",
+    expect(f.screen.captureCharFrame()).not.toContain(
+      "What would you like to work on?",
     );
   } finally {
     await f.closeUI();

@@ -1,9 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { Application } from "../src/core/application";
-import { appPaths } from "../src/platform/paths";
-import type { ProviderManager } from "../src/providers/manager";
-import { openDatabase } from "../src/storage/database";
+import { Application } from "../src/app";
+import { appPaths } from "../src/lib/platform/paths";
+import type { ProviderManager } from "../src/lib/providers/manager";
+import { openDatabase } from "../src/lib/storage/database";
 
 export function fixture(providers?: ProviderManager) {
   const root = mkdtempSync("/tmp/agentos-test-");

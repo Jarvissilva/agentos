@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { ProviderManager } from "../src/providers/manager";
+import { ProviderManager } from "../src/lib/providers/manager";
 import type {
   ProviderConnection,
   SessionOptions,
-} from "../src/providers/types";
-import { sessions } from "../src/storage/schema";
+} from "../src/lib/providers/types";
+import { sessions } from "../src/lib/storage/schema";
 import { fixture } from "./helpers";
 
 class FakeProviders extends ProviderManager {

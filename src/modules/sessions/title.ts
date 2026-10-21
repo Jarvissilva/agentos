@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { Session } from "../storage/schema";
+import type { Session } from "../../lib/storage/schema";
 
 export const SESSION_TITLE_MAX = 60;
 const ansi = /\p{Cc}\[[0-?]*[ -/]*[@-~]/gu;

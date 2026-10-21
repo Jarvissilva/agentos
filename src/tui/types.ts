@@ -1,10 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
-import type {
-  Application,
-  SessionLauncher,
-  TerminalHandoff,
-} from "../core/application";
-import type { ProviderId, ProviderInfo } from "../providers/types";
+import type { Application, SessionLauncher, TerminalHandoff } from "../app";
+import type { ProviderId, ProviderInfo } from "../lib/providers/types";
 
 export interface PaletteItem {
   name: string;
@@ -97,6 +93,11 @@ export interface GroupFilter {
   id: string;
   name: string;
 }
+export interface ResourceFilter {
+  /** `null` represents the unfiltered "All" choice. */
+  id: string | null;
+  name: string;
+}
 export interface RunFilter {
   automationId: string;
   name: string;
@@ -124,6 +125,7 @@ export interface ResourceContext {
   setConfirm: Dispatch<SetStateAction<Confirmation | null>>;
   setReport: Dispatch<SetStateAction<Report | null>>;
   setRunFilter: Dispatch<SetStateAction<RunFilter | null>>;
+  setProjectFilter: Dispatch<SetStateAction<GroupFilter | null>>;
   setDefaultDirectory: Dispatch<SetStateAction<string | undefined>>;
   setHomeDirectory: Dispatch<SetStateAction<string>>;
   refresh: () => void;
@@ -157,4 +159,8 @@ export interface ResourceView {
   sectionCommands: Command[];
   creation?: Command;
   open?: (row: Row) => boolean;
+  /** Horizontal filter strip shown above the list, selected with left/right. */
+  filters?: ResourceFilter[];
+  filterIndex?: number;
+  selectFilter?: (index: number) => void;
 }

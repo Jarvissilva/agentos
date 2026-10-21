@@ -2,9 +2,9 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { CronExpressionParser } from "cron-parser";
 import { z } from "zod";
-import { slugSchema } from "../core/skills";
-import { inside } from "../platform/files";
-import { expandPath, nameSchema } from "../platform/paths";
+import { inside } from "../../lib/platform/files";
+import { expandPath, nameSchema } from "../../lib/platform/paths";
+import { slugSchema } from "../skills/service";
 export const scheduleSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("manual") }),
   z.object({ kind: z.literal("once"), at: z.iso.datetime({ offset: true }) }),

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { parseAgent } from "../../core/application";
-import { runInteractive } from "../../platform/process";
+import { parseAgent } from "../../app";
+import { runInteractive } from "../../lib/platform/process";
 import { colors } from "../theme";
 import type { Command, ResourceContext, ResourceView, Row } from "../types";
 export function agentsView(context: ResourceContext): ResourceView {

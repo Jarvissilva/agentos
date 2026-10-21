@@ -1,15 +1,16 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ReactNode, RefObject } from "react";
-import { redact } from "../../platform/files";
-import { errorMessage } from "../../platform/paths";
-import type { ProviderInfo } from "../../providers/types";
-import { colors } from "../theme";
+import { redact } from "../../lib/platform/files";
+import { errorMessage } from "../../lib/platform/paths";
+import type { ProviderInfo } from "../../lib/providers/types";
+import { clip, colors } from "../theme";
 import type {
   Command,
   Confirmation,
   PaletteItem,
   Picker,
   Report,
+  ResourceFilter,
   ResourceView,
   Row,
   SectionKey,
@@ -51,6 +52,8 @@ interface ResourceModalProps {
   detailScroll: RefObject<ScrollBoxRenderable | null>;
   activeCopy: ResourceView["copy"] | null;
   activeSection?: SectionKey;
+  filters?: ResourceFilter[];
+  filterIndex?: number;
   providers: ProviderInfo[];
   paletteProviders: PaletteItem[];
   paletteCommands: PaletteItem[];
@@ -91,6 +94,8 @@ export function ResourceModal({
   detailScroll,
   activeCopy,
   activeSection,
+  filters,
+  filterIndex,
   providers,
   paletteProviders,
   paletteCommands,
@@ -121,9 +126,16 @@ export function ResourceModal({
       2 +
       (isPicker ? 1 : 0)
     : 0;
+  const showFilters = !!filters && filters.length > 1;
   const listCapacity = Math.max(
     1,
-    Math.floor((height - 9 - (paletteVisible ? paletteHeight + 2 : 0)) / 3),
+    Math.floor(
+      (height -
+        9 -
+        (showFilters ? 1 : 0) -
+        (paletteVisible ? paletteHeight + 2 : 0)) /
+        3,
+    ),
   );
   const listStart = Math.max(
     0,
@@ -212,6 +224,32 @@ export function ResourceModal({
             paddingTop={1}
             overflow="hidden"
           >
+            {showFilters && filters ? (
+              <box
+                height={1}
+                flexDirection="row"
+                gap={2}
+                flexShrink={0}
+                overflow="hidden"
+              >
+                {filters.map((filter, index) => {
+                  const active = index === (filterIndex ?? 0);
+                  return (
+                    <text
+                      key={filter.id ?? "all"}
+                      fg={active ? colors.accentBright : colors.muted}
+                      wrapMode="none"
+                    >
+                      {active ? (
+                        <b>{`[${clip(filter.name, 18)}]`}</b>
+                      ) : (
+                        clip(filter.name, 18)
+                      )}
+                    </text>
+                  );
+                })}
+              </box>
+            ) : null}
             {visibleRows.length ? (
               visibleRows.map((row, index) => (
                 <ListRow
@@ -354,7 +392,16 @@ export function ResourceModal({
                     ...(width >= 78
                       ? [{ key: "↑↓", label: detailMode ? "scroll" : "move" }]
                       : []),
-                    ...(detailMode ? [] : [{ key: "↵", label: "open" }]),
+                    ...(showFilters ? [{ key: "←→", label: "filter" }] : []),
+                    ...(detailMode
+                      ? []
+                      : [
+                          {
+                            key: "↵",
+                            label:
+                              activeSection === "sessions" ? "resume" : "open",
+                          },
+                        ]),
                     { key: "Esc", label: "back" },
                   ]}
                 />

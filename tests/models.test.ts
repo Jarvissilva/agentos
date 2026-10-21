@@ -8,8 +8,8 @@ import {
   modelArguments,
   openCodeModels,
   resolveModel,
-} from "../src/providers/models";
-import type { ModelCatalog } from "../src/providers/types";
+} from "../src/lib/providers/models";
+import type { ModelCatalog } from "../src/lib/providers/types";
 import { fixture } from "./helpers";
 
 export const catalog: ModelCatalog = {
