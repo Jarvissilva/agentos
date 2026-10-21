@@ -17,8 +17,55 @@ export function commands(app: Application) {
   });
   program
     .command("paths")
-    .description("Show Agent OS storage paths")
+    .description("Show agentos storage paths")
     .action(() => output(app.paths));
+  const settings = program
+    .command("settings")
+    .description("Manage agentos session defaults");
+  const settingsValue = () => ({
+    provider: app.preferredProvider() ?? null,
+    defaultDirectory: app.defaultDirectory() ?? null,
+    providerDefaults: Object.fromEntries(
+      (["codex", "opencode", "agy"] as const).map((id) => [
+        id,
+        app.providerDefaults(id),
+      ]),
+    ),
+  });
+  settings.command("show").action(() => output(settingsValue()));
+  settings.command("provider <provider>").action((id) => {
+    app.setPreferredProvider(app.providers.adapter(id).id);
+    output(settingsValue());
+  });
+  settings
+    .command("directory [path]")
+    .option("--clear", "Use the launch directory")
+    .action((path, options) => {
+      if (Boolean(path) === Boolean(options.clear))
+        throw new Error("Supply a directory or --clear, exclusively");
+      app.setDefaultDirectory(path);
+      output(settingsValue());
+    });
+  for (const kind of ["model", "reasoning"] as const) {
+    settings
+      .command(`${kind} <provider> [value]`)
+      .option("--clear", "Use provider default")
+      .action(async (provider, value, options) => {
+        if (Boolean(value) === Boolean(options.clear))
+          throw new Error("Supply a value or --clear, exclusively");
+        const id = app.providers.adapter(provider).id;
+        const previous = app.providerDefaults(id);
+        await app.setProviderDefaults(
+          id,
+          kind === "model"
+            ? value
+              ? { model: value }
+              : {}
+            : { ...previous, reasoning: value },
+        );
+        output(settingsValue());
+      });
+  }
   const providers = program
     .command("providers")
     .description("Detect native providers and capabilities");
@@ -26,31 +73,38 @@ export function commands(app: Application) {
     .command("list")
     .action(async () => output(await app.detectProviders()));
 
-  const projects = program.command("projects").description("Manage workspaces");
+  providers
+    .command("models <provider>")
+    .action(async (provider) => output(await app.modelCatalog(provider)));
+
+  const projects = program
+    .command("projects")
+    .description("Group sessions and automations");
   projects.command("list").action(() => output(app.listProjects()));
   projects
-    .command("create <name> <directory>")
+    .command("create <name>")
     .option("-d, --description <text>", "Description", "")
-    .action((name, cwd, options) =>
-      output(app.createProject(name, cwd, options.description)),
+    .action((name, options) =>
+      output(app.createProject(name, options.description)),
     );
   projects
     .command("edit <project>")
     .option("--name <name>")
-    .option("--directory <path>")
     .option("--description <text>")
     .action((id, options) =>
       output(
         app.updateProject(id, {
           name: options.name,
-          cwd: options.directory,
           description: options.description,
         }),
       ),
     );
   projects
     .command("remove <project>")
-    .requiredOption("--yes", "Remove metadata; keep workspace files")
+    .requiredOption(
+      "--yes",
+      "Remove group; keep sessions, automations, and files",
+    )
     .action((id) => {
       app.removeProject(id);
       output({ removed: id });
@@ -102,10 +156,13 @@ export function commands(app: Application) {
     .command("new")
     .option("--project <name-or-id>")
     .option("--agent <name-or-id>")
-    .option("--provider <provider>", "Provider", "codex")
+    .option(
+      "--provider <provider>",
+      "Provider (defaults to saved preference or codex)",
+    )
     .option(
       "--cwd <path>",
-      "Working directory (defaults to project or current directory)",
+      "Working directory (defaults to saved preference or current directory)",
     )
     .option("--prompt <text>", "Initial task")
     .action(async (options) => {

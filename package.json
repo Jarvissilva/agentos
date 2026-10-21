@@ -1,5 +1,5 @@
 {
-  "name": "agent-os",
+  "name": "agentos",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,11 +12,14 @@
   },
   "scripts": {
     "start": "bun src/index.ts",
+    "theme:providers": "bun scripts/provider-themes.ts",
     "dev": "bun --watch src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "check": "bun run typecheck && bun run lint && bun test"
+    "check": "bun run typecheck && bun run lint && bun test",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@iarna/toml": "2.2.5",

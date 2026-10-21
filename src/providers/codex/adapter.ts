@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { probe, runInteractive } from "../../platform/process";
 import { executeNative } from "../execution";
+import { codexModels, modelArguments } from "../models";
 import type {
   ExecutionInput,
   ProviderAdapter,
@@ -14,8 +15,10 @@ import type {
 import { CodexRpc } from "./rpc";
 
 // Verified against the generated 0.163.0 protocol; validate response subsets at
-// runtime because provider upgrades are independent of Agent OS upgrades.
+// runtime because provider upgrades are independent of agentos upgrades.
 const threadResponse = z.object({
+  model: z.string().optional(),
+  reasoningEffort: z.string().nullish(),
   thread: z.object({ id: z.string().min(1), sessionId: z.string().min(1) }),
 });
 
@@ -62,6 +65,16 @@ export class CodexAdapter implements ProviderAdapter {
     }
   }
 
+  async models(cwd?: string) {
+    const connection = await this.connect(cwd);
+    try {
+      if (!connection.models)
+        throw new Error("Codex model discovery is unavailable");
+      return await connection.models();
+    } finally {
+      await connection.close();
+    }
+  }
   async connect(cwd?: string): Promise<ProviderConnection> {
     const info = await this.detect();
     if (!info.interactive) throw new Error(info.reason ?? "Codex unavailable");
@@ -126,15 +139,35 @@ export class CodexAdapter implements ProviderAdapter {
       rpc = await CodexRpc.connect(socket);
       const client = rpc;
       return {
-        async create(cwd) {
+        models: () =>
+          codexModels((method, params) => client.request(method, params)),
+        async create(cwd, options) {
           const result = threadResponse.parse(
-            await client.request("thread/start", { cwd, ephemeral: false }),
+            await client.request("thread/start", {
+              cwd,
+              ephemeral: false,
+              ...(options?.model ? { model: options.model } : {}),
+              ...(options?.reasoning
+                ? { config: { model_reasoning_effort: options.reasoning } }
+                : {}),
+            }),
           );
+          if (options?.model && result.model !== options.model)
+            throw new Error(
+              `Codex rejected configured model: ${options.model}`,
+            );
+          if (
+            options?.reasoning &&
+            result.reasoningEffort !== options.reasoning
+          )
+            throw new Error(
+              `Codex rejected configured reasoning effort: ${options.reasoning}`,
+            );
           // Naming materializes the native rollout before another client (the
           // official TUI) resumes it. An unnamed empty thread is memory-only.
           await client.request("thread/name/set", {
             threadId: result.thread.id,
-            name: `Agent OS · ${new Date().toISOString()}`,
+            name: `agentos · ${new Date().toISOString()}`,
           });
           return {
             threadId: result.thread.id,
@@ -146,14 +179,21 @@ export class CodexAdapter implements ProviderAdapter {
             await client.request("thread/read", { threadId }),
           );
         },
-        launch: async (threadId, cwd, prompt) => {
+        launch: async (
+          threadId,
+          cwd,
+          prompt,
+          options,
+          runner = runInteractive,
+        ) => {
           // Stop the bootstrap server before handing control to ordinary Codex.
           // Its native TUI then uses its normal backend and permission handling.
           await close();
-          return runInteractive(
+          return runner(
             "codex",
             [
               "resume",
+              ...modelArguments("codex", options),
               "--cd",
               cwd,
               "--",

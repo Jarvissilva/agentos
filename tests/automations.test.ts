@@ -252,3 +252,24 @@ test("scheduler keeps polling while a scheduled run is active and records overla
   release?.();
   await f.app.automations.drain();
 });
+
+test("interactive model defaults never reach automation execution", async () => {
+  const f = setup();
+  f.app.modelCatalog = async () => ({
+    reasoningLabel: "effort",
+    models: [{ id: "test-model", name: "Test", reasoning: [{ id: "high" }] }],
+  });
+  await f.app.setProviderDefaults("codex", {
+    model: "test-model",
+    reasoning: "high",
+  });
+  f.app.modelCatalog = async () => {
+    throw new Error("Automation must not discover defaults");
+  };
+  const automation = f.app.automations.save(definition(f.root));
+  const result = await f.app.automations.run(automation.id);
+  expect(result?.status).toBe("completed");
+  expect(f.providers.calls).toHaveLength(2);
+  for (const input of f.providers.calls)
+    expect(input.sessionOptions).toBeUndefined();
+});

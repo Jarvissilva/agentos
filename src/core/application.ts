@@ -20,7 +20,14 @@ import {
   nameSchema,
 } from "../platform/paths";
 import { ProviderManager } from "../providers/manager";
-import type { ProviderConnection } from "../providers/types";
+import { providerDefaultsSchema, resolveModel } from "../providers/models";
+import type {
+  InteractiveRunner,
+  ProviderConnection,
+  ProviderDefaults,
+  ProviderId,
+  SessionOptions,
+} from "../providers/types";
 import type { AppDatabase } from "../storage/database";
 import {
   agents,
@@ -52,7 +59,8 @@ export function parseAgent(text: string) {
   return { ...metadata, instructions };
 }
 
-function directory(input: string) {
+export function directory(input: string) {
+  if (!input.trim()) throw new Error("Working directory is required");
   const cwd = realpathSync(expandPath(input));
   if (!statSync(cwd).isDirectory())
     throw new Error("Working directory must be a directory");
@@ -60,7 +68,7 @@ function directory(input: string) {
 }
 
 // Include boot and process start identities, so PID reuse never claims that an
-// interrupted session still belongs to a live Agent OS instance.
+// interrupted session still belongs to a live agentos instance.
 function processIdentity(pid: number): string | null {
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
@@ -74,7 +82,13 @@ function processIdentity(pid: number): string | null {
 export type TerminalHandoff = (
   operation: () => Promise<number>,
 ) => Promise<number>;
+export type SessionLauncher = ((
+  session: Session,
+  ...args: Parameters<InteractiveRunner>
+) => Promise<number>) & { preflight?: (provider: ProviderId) => void };
+
 export class Application {
+  private readonly interactiveOperations = new Set<Promise<Session>>();
   readonly skills: SkillService;
   readonly mcps: McpService;
   readonly automations: AutomationService;
@@ -86,6 +100,89 @@ export class Application {
     this.skills = new SkillService(db, paths);
     this.mcps = new McpService(db);
     this.automations = new AutomationService(this);
+  }
+  private readPreferences() {
+    const file = join(this.paths.config, "preferences.json");
+    try {
+      if (!lstatSync(file).isFile())
+        throw new Error("Preferences must be a regular file");
+      const text = readFileSync(file, "utf8");
+      const value = z
+        .object({
+          provider: z.enum(["codex", "opencode", "agy"]).optional(),
+          defaultDirectory: z.string().min(1).optional(),
+          providerDefaults: z
+            .object({
+              codex: providerDefaultsSchema.optional(),
+              opencode: providerDefaultsSchema.optional(),
+              agy: providerDefaultsSchema.optional(),
+            })
+            .passthrough()
+            .optional(),
+        })
+        .passthrough()
+        .parse(JSON.parse(text));
+      return { file, text, value };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        return { file, text: "", value: {} };
+      throw error;
+    }
+  }
+  providerDefaults(provider: ProviderId): ProviderDefaults {
+    return this.readPreferences().value.providerDefaults?.[provider] ?? {};
+  }
+  async modelCatalog(provider: string, cwd?: string) {
+    const adapter = this.providers.adapter(provider);
+    if (!adapter.models)
+      throw new Error(`${provider} model discovery is unavailable`);
+    return adapter.models(cwd);
+  }
+  async validateProviderDefaults(
+    provider: ProviderId,
+    defaults: ProviderDefaults,
+    cwd?: string,
+  ): Promise<SessionOptions> {
+    providerDefaultsSchema.parse(defaults);
+    return defaults.model
+      ? resolveModel(await this.modelCatalog(provider, cwd), defaults)
+      : {};
+  }
+  async setProviderDefaults(provider: ProviderId, defaults: ProviderDefaults) {
+    this.providers.adapter(provider);
+    const parsed = providerDefaultsSchema.parse(defaults);
+    await this.validateProviderDefaults(provider, parsed);
+    const { file, text, value } = this.readPreferences();
+    atomicWrite(
+      file,
+      `${JSON.stringify({ ...value, providerDefaults: { ...value.providerDefaults, [provider]: parsed } }, null, 2)}\n`,
+      text,
+    );
+  }
+  preferredProvider() {
+    return this.readPreferences().value.provider;
+  }
+  setPreferredProvider(provider: ProviderId) {
+    this.providers.adapter(provider);
+    const { file, text, value } = this.readPreferences();
+    atomicWrite(
+      file,
+      `${JSON.stringify({ ...value, provider }, null, 2)}\n`,
+      text,
+    );
+  }
+  defaultDirectory() {
+    return this.readPreferences().value.defaultDirectory;
+  }
+  setDefaultDirectory(input?: string) {
+    const { file, text, value } = this.readPreferences();
+    const defaultDirectory = input?.trim() ? directory(input) : undefined;
+    atomicWrite(
+      file,
+      `${JSON.stringify({ ...value, defaultDirectory }, null, 2)}\n`,
+      text,
+    );
+    return defaultDirectory;
   }
   async detectProviders() {
     const list = await this.providers.list();
@@ -125,13 +222,13 @@ export class Application {
     unlinkSync(file);
     this.db.delete(agents).where(eq(agents.id, a.id)).run();
   }
-  instructionFile(project: string, kind = "AGENTS.md") {
+  instructionFile(session: string, kind = "AGENTS.md") {
     if (!["AGENTS.md", "GEMINI.md", "CLAUDE.md"].includes(kind))
       throw new Error("Unsupported instruction filename");
-    return join(this.project(project).cwd, kind);
+    return join(this.session(session).cwd, kind);
   }
-  readInstructions(project: string, kind?: string) {
-    const file = this.instructionFile(project, kind);
+  readInstructions(session: string, kind?: string) {
+    const file = this.instructionFile(session, kind);
     try {
       if (!lstatSync(file).isFile())
         throw new Error("Instruction file must be a regular file");
@@ -141,9 +238,9 @@ export class Application {
       throw e;
     }
   }
-  saveInstructions(project: string, text: string, kind?: string) {
-    const file = this.instructionFile(project, kind);
-    atomicWrite(file, text, this.readInstructions(project, kind));
+  saveInstructions(session: string, text: string, kind?: string) {
+    const file = this.instructionFile(session, kind);
+    atomicWrite(file, text, this.readInstructions(session, kind));
   }
 
   listProjects() {
@@ -156,23 +253,19 @@ export class Application {
     if (!result) throw new Error(`Project not found: ${id}`);
     return result;
   }
-  createProject(name: string, cwd: string, description = "") {
+  createProject(name: string, description = "") {
     return this.db
       .insert(projects)
       .values({
         id: randomUUID(),
         name: nameSchema.parse(name),
-        cwd: directory(cwd),
         description,
         createdAt: Date.now(),
       })
       .returning()
       .get();
   }
-  updateProject(
-    id: string,
-    input: { name?: string; cwd?: string; description?: string },
-  ) {
+  updateProject(id: string, input: { name?: string; description?: string }) {
     const existing = this.project(id);
     return this.db
       .update(projects)
@@ -182,7 +275,6 @@ export class Application {
           input.name === undefined
             ? existing.name
             : nameSchema.parse(input.name),
-        cwd: input.cwd === undefined ? existing.cwd : directory(input.cwd),
       })
       .where(eq(projects.id, existing.id))
       .returning()
@@ -294,6 +386,16 @@ export class Application {
       .orderBy(desc(sessions.updatedAt))
       .all();
   }
+  assignSessionProject(id: string, project?: string) {
+    const session = this.session(id);
+    const projectId = project ? this.project(project).id : null;
+    return this.db
+      .update(sessions)
+      .set({ projectId })
+      .where(eq(sessions.id, session.id))
+      .returning()
+      .get();
+  }
   session(id: string) {
     const result = this.db
       .select()
@@ -304,7 +406,21 @@ export class Application {
     return result;
   }
 
-  async newSession(
+  newSession(...args: Parameters<Application["createSession"]>) {
+    return this.trackInteractive(this.createSession(...args));
+  }
+  private trackInteractive(operation: Promise<Session>) {
+    this.interactiveOperations.add(operation);
+    void operation.then(
+      () => this.interactiveOperations.delete(operation),
+      () => this.interactiveOperations.delete(operation),
+    );
+    return operation;
+  }
+  async settleInteractiveSessions() {
+    await Promise.allSettled([...this.interactiveOperations]);
+  }
+  private async createSession(
     input: {
       project?: string;
       agent?: string;
@@ -313,6 +429,7 @@ export class Application {
       prompt?: string;
     },
     handoff: TerminalHandoff = (run) => run(),
+    launcher?: SessionLauncher,
   ) {
     if (!process.stdin.isTTY || !process.stdout.isTTY)
       throw new Error(
@@ -321,11 +438,21 @@ export class Application {
     const project = input.project ? this.project(input.project) : undefined;
     const agent = input.agent ? this.agent(input.agent) : undefined;
     const definition = agent ? this.agentDefinition(agent.id) : undefined;
-    const cwd = directory(input.cwd ?? project?.cwd ?? process.cwd());
-    const adapter = this.providers.adapter(input.provider ?? "codex");
+    const cwd = directory(
+      input.cwd ?? this.defaultDirectory() ?? process.cwd(),
+    );
+    const adapter = this.providers.adapter(
+      input.provider ?? this.preferredProvider() ?? "codex",
+    );
+    launcher?.preflight?.(adapter.id);
     const info = await adapter.detect();
     if (!info.interactive)
       throw new Error(info.reason ?? "Provider cannot launch native sessions");
+    const options = await this.validateProviderDefaults(
+      adapter.id,
+      this.providerDefaults(adapter.id),
+      cwd,
+    );
     const id = randomUUID();
     const now = Date.now();
     this.db
@@ -350,7 +477,7 @@ export class Application {
     let connection: ProviderConnection | undefined;
     try {
       connection = await adapter.connect(cwd);
-      const native = await connection.create(cwd);
+      const native = await connection.create(cwd, options);
       this.db
         .update(sessions)
         .set({
@@ -362,12 +489,22 @@ export class Application {
         .where(eq(sessions.id, id))
         .run();
       const prompt = definition
-        ? `Agent OS role: ${definition.name}\n\n${definition.instructions}\n\n${input.prompt || "Use this role for this conversation and wait for my task."}`
+        ? `agentos role: ${definition.name}\n\n${definition.instructions}\n\n${input.prompt || "Use this role for this conversation and wait for my task."}`
         : input.prompt;
       const active = connection;
       await this.attach(
         id,
-        () => active.launch(native.threadId, cwd, prompt),
+        () =>
+          active.launch(
+            native.threadId,
+            cwd,
+            prompt,
+            options,
+            launcher
+              ? (command, args, directory) =>
+                  launcher(this.session(id), command, args, directory)
+              : undefined,
+          ),
         handoff,
       );
       return this.session(id);
@@ -379,7 +516,14 @@ export class Application {
     }
   }
 
-  async resumeSession(id: string, handoff: TerminalHandoff = (run) => run()) {
+  resumeSession(...args: Parameters<Application["reopenSession"]>) {
+    return this.trackInteractive(this.reopenSession(...args));
+  }
+  private async reopenSession(
+    id: string,
+    handoff: TerminalHandoff = (run) => run(),
+    launcher?: SessionLauncher,
+  ) {
     if (!process.stdin.isTTY || !process.stdout.isTTY)
       throw new Error(
         "Resuming a native session requires an interactive terminal",
@@ -390,6 +534,7 @@ export class Application {
       throw new Error(
         "This session has no native thread ID; create a new session",
       );
+    launcher?.preflight?.(this.providers.adapter(row.provider).id);
     const cwd = directory(row.cwd);
     const claimed = this.db
       .update(sessions)
@@ -409,7 +554,7 @@ export class Application {
       .get();
     if (!claimed)
       throw new Error(
-        "This session is already open in another Agent OS instance",
+        "This session is already open in another agentos instance",
       );
     let connection: ProviderConnection | undefined;
     try {
@@ -418,7 +563,17 @@ export class Application {
       const active = connection;
       await this.attach(
         id,
-        () => active.launch(row.nativeThreadId ?? "", cwd),
+        () =>
+          active.launch(
+            row.nativeThreadId ?? "",
+            cwd,
+            undefined,
+            undefined,
+            launcher
+              ? (command, args, directory) =>
+                  launcher(this.session(id), command, args, directory)
+              : undefined,
+          ),
         handoff,
       );
       return this.session(id);

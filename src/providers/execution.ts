@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { z } from "zod";
+import { modelArguments } from "./models";
 import type { ExecutionInput, ExecutionResult, ProviderId } from "./types";
 
 export const object = (value: unknown): Record<string, unknown> =>
@@ -11,6 +12,7 @@ export async function captureJson(
   cwd?: string,
 ): Promise<unknown> {
   const p = Bun.spawn([command, ...args], {
+    env: process.env,
     cwd,
     stdout: "pipe",
     stderr: "pipe",
@@ -54,7 +56,7 @@ export async function executeNative(
                 "--data",
                 JSON.stringify({
                   location: { directory: input.cwd },
-                  title: "Agent OS automation",
+                  title: "agentos automation",
                 }),
               ]),
         ],
@@ -89,6 +91,7 @@ export async function executeNative(
             input.prompt,
           ]
         : [
+            ...modelArguments("agy", input.sessionOptions),
             "--output-format",
             "stream-json",
             ...(input.nativeId ? ["--conversation", input.nativeId] : []),

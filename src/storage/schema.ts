@@ -4,7 +4,6 @@ export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description").notNull().default(""),
-  cwd: text("cwd").notNull().unique(),
   createdAt: integer("created_at").notNull(),
 });
 
@@ -81,6 +80,9 @@ export const mcpInstalls = sqliteTable("mcp_installs", {
   fingerprint: text("fingerprint").notNull(),
 });
 export const automations = sqliteTable("automations", {
+  projectId: text("project_id").references(() => projects.id, {
+    onDelete: "set null",
+  }),
   id: text("id").primaryKey(),
   name: text("name").notNull().unique(),
   slug: text("slug").notNull().unique(),

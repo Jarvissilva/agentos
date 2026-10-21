@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { createCliRenderer, type TextareaRenderable } from "@opentui/core";
+import { createCliRenderer, type ScrollBoxRenderable } from "@opentui/core";
 import {
   createRoot,
   useKeyboard,
@@ -7,187 +6,141 @@ import {
   useTerminalDimensions,
 } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { parse, stringify } from "yaml";
 import {
   type Application,
-  parseAgent,
+  directory,
   type TerminalHandoff,
 } from "../core/application";
 import { redact } from "../platform/files";
 import { errorMessage } from "../platform/paths";
-import { runInteractive } from "../platform/process";
-import type { ProviderInfo } from "../providers/types";
-import { installWorker, workerStatus } from "../scheduler/systemd";
+import type {
+  ModelCatalog,
+  ProviderDefaults,
+  ProviderId,
+  ProviderInfo,
+} from "../providers/types";
+import { matchCommands, matches } from "./commands";
+import { Form, ModalSurface } from "./components";
+import { ResourceModal } from "./components/resource-modal";
+import { SessionTabs, type WorkspaceTabProps } from "./components/session-tabs";
+import { useNewSession } from "./flows/new-session";
+import { colors, plural } from "./theme";
+import type {
+  Command,
+  Confirmation,
+  FormSpec,
+  GroupFilter,
+  PaletteItem,
+  Picker,
+  PickerOption,
+  Report,
+  ResourceContext,
+  ResourceView,
+  Row,
+  RunFilter,
+  SectionKey,
+  View,
+} from "./types";
+import { agentsView } from "./views/agents";
+import { automationsView } from "./views/automations";
+import { Home, homeCommands, useHomeLaunch } from "./views/home";
+import { mcpsView } from "./views/mcps";
+import { notificationsView } from "./views/notifications";
+import { projectsView } from "./views/projects";
+import { providersView, selectSessionProvider } from "./views/providers";
+import { runsView } from "./views/runs";
+import { sessionsView } from "./views/sessions";
+import { settingsView } from "./views/settings";
+import { skillsView } from "./views/skills";
 
-const colors = {
-  bg: "#0b1019",
-  panel: "#111b29",
-  line: "#26374d",
-  text: "#d6e1ef",
-  muted: "#899bb2",
-  accent: "#5ee0c1",
-  error: "#ff9b9b",
-};
-const pages = [
-  "Dashboard",
-  "Providers",
-  "Projects",
-  "Agents",
-  "Skills",
-  "MCPs",
-  "Sessions",
-  "Automations",
-] as const;
-type Page = (typeof pages)[number];
-type Choice = { name: string; description: string; action: () => void };
-interface FormSpec {
-  title: string;
-  fields: { label: string; value: string; multiline?: boolean }[];
-  save: (values: string[]) => void | Promise<void>;
-}
-
-function Form({
-  spec,
-  cancel,
-  fail,
-}: {
-  spec: FormSpec;
-  cancel: () => void;
-  fail: (error: unknown) => void;
-}) {
-  const [values, setValues] = useState(spec.fields.map((f) => f.value));
-  const [focus, setFocus] = useState(0);
-  const textarea = useRef<TextareaRenderable>(null);
-  const [saving, setSaving] = useState(false);
-  const save = async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      await spec.save(values);
-    } catch (error) {
-      fail(error);
-    } finally {
-      setSaving(false);
-    }
-  };
-  useKeyboard((key) => {
-    if (key.name === "escape") cancel();
-    if (key.name === "tab") {
-      key.preventDefault();
-      setFocus(
-        (n) => (n + (key.shift ? values.length - 1 : 1)) % values.length,
-      );
-    }
-    if (key.ctrl && key.name === "s") {
-      key.preventDefault();
-      void save();
-    }
-  });
+export function App({ app }: { app: Application }) {
   return (
-    <box flexDirection="column" gap={1} flexGrow={1}>
-      <text fg={colors.accent}>{spec.title}</text>
-      <scrollbox flexGrow={1}>
-        {spec.fields.map((field, index) => (
-          <box key={field.label} flexDirection="column" marginBottom={1}>
-            <text fg={focus === index ? colors.accent : colors.muted}>
-              {field.label}
-            </text>
-            {field.multiline ? (
-              <textarea
-                ref={textarea}
-                initialValue={field.value}
-                height={8}
-                focused={focus === index && !saving}
-                backgroundColor={colors.panel}
-                textColor={colors.text}
-                onContentChange={() =>
-                  setValues((old) =>
-                    old.map((v, i) =>
-                      i === index ? (textarea.current?.plainText ?? v) : v,
-                    ),
-                  )
-                }
-              />
-            ) : (
-              <input
-                value={values[index] ?? ""}
-                focused={focus === index && !saving}
-                backgroundColor={colors.panel}
-                textColor={colors.text}
-                onInput={(text) =>
-                  setValues((old) =>
-                    old.map((v, i) => (i === index ? text : v)),
-                  )
-                }
-                onSubmit={() => {
-                  if (focus < values.length - 1) setFocus(focus + 1);
-                  else void save();
-                }}
-              />
-            )}
-          </box>
-        ))}
-      </scrollbox>
-      <text fg={colors.muted}>
-        {saving ? "Saving…" : "Tab next field · Ctrl+S save · Esc cancel"}
-      </text>
-    </box>
+    <SessionTabs app={app}>
+      {(props) => <Workspace app={app} {...props} />}
+    </SessionTabs>
   );
 }
 
-export function App({ app }: { app: Application }) {
+function Workspace({
+  app,
+  active: tabActive,
+  attached,
+  sessionLauncher,
+  activateSession,
+}: { app: Application } & WorkspaceTabProps) {
   const renderer = useRenderer();
-  const { width, height } = useTerminalDimensions();
-  const [page, setPage] = useState<Page>("Dashboard");
-  const [focus, setFocus] = useState<"nav" | "content" | "search">("nav");
-  const [query, setQuery] = useState("");
+  const { width: terminalWidth, height: screenHeight } =
+    useTerminalDimensions();
+  const terminalHeight = Math.max(1, screenHeight - 1);
+  const [view, setView] = useState<View>({ kind: "home" });
+  const [selected, setSelected] = useState(0);
+  const [projectFilter, setProjectFilter] = useState<GroupFilter | null>(null);
+  const [input, setInput] = useState("");
+  const [draft, setDraft] = useState("");
+  const draftRef = useRef("");
+  const updateDraft = useCallback((value: string) => {
+    draftRef.current = value;
+    setDraft(value);
+  }, []);
+  const [preferredProvider, setPreferredProvider] = useState<ProviderId>();
+  const [detecting, setDetecting] = useState(true);
+  const [homeDirectory, setHomeDirectory] = useState(process.cwd());
+  const [defaultDirectory, setDefaultDirectory] = useState<string>();
+  const [homeProject, setHomeProject] = useState<string>();
+  const [homeAgent, setHomeAgent] = useState<string>();
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [menuSelected, setMenuSelected] = useState(0);
+  const pickerEpoch = useRef(0);
+  const [picker, setPicker] = useState<Picker | null>(null);
+  const [wizard, setWizard] = useState(false);
+  const [form, setForm] = useState<FormSpec | null>(null);
+  const [confirm, setConfirm] = useState<Confirmation | null>(null);
+  const [report, setReport] = useState<Report | null>(null);
+  const [runFilter, setRunFilter] = useState<RunFilter | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [form, setForm] = useState<FormSpec | null>(null);
-  const [wizard, setWizard] = useState<{
-    stage: "project" | "agent" | "provider";
-    agent?: string;
-    project?: string;
-  } | null>(null);
-  const [detail, setDetail] = useState<{
-    title: string;
-    body: string;
-    sessionId?: string;
-    projectId?: string;
-    agentId?: string;
-    skillId?: string;
-    mcpId?: string;
-    automationId?: string;
-    runId?: string;
-  } | null>(null);
-  const [confirm, setConfirm] = useState<{
-    message: string;
-    action: () => void;
-  } | null>(null);
-  const [actionMenu, setActionMenu] = useState<{
-    title: string;
-    choices: Choice[];
-  } | null>(null);
+  const detailScroll = useRef<ScrollBoxRenderable | null>(null);
+  const modalWidth = Math.min(88, terminalWidth - 8);
+  const modalHeight = Math.min(34, terminalHeight - 4);
+  const width = modalWidth - 2;
+  const height = modalHeight - 2;
+
   const fail = useCallback((value: unknown) => {
     setError(redact(errorMessage(value)));
     setNotice("");
   }, []);
-  const refresh = useCallback(() => setRevision((n) => n + 1), []);
+  const refresh = useCallback(() => setRevision((value) => value + 1), []);
+  void revision;
+
   useEffect(() => {
     let active = true;
+    try {
+      setPreferredProvider(app.preferredProvider());
+      const savedDirectory = app.defaultDirectory();
+      setDefaultDirectory(savedDirectory);
+      if (savedDirectory) setHomeDirectory(directory(savedDirectory));
+    } catch (error) {
+      fail(error);
+    }
     void app
       .detectProviders()
       .then((items) => {
         if (active) setProviders(items);
       })
-      .catch(fail);
+      .catch((error) => {
+        if (active) fail(error);
+      })
+      .finally(() => {
+        if (active) setDetecting(false);
+      });
     return () => {
       active = false;
     };
   }, [app, fail]);
+
   useEffect(() => {
     const interval = setInterval(() => {
       app.recoverSessions();
@@ -196,6 +149,11 @@ export function App({ app }: { app: Application }) {
     }, 5000);
     return () => clearInterval(interval);
   }, [app, refresh]);
+
+  useEffect(() => {
+    if (attached) setBusy(false);
+  }, [attached]);
+
   const handoff: TerminalHandoff = async (run) => {
     await renderer.suspend();
     try {
@@ -204,6 +162,7 @@ export function App({ app }: { app: Application }) {
       await renderer.resume();
     }
   };
+
   const perform = async (run: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(true);
@@ -218,835 +177,898 @@ export function App({ app }: { app: Application }) {
       setBusy(false);
     }
   };
-  const navigate = (next: Page) => {
-    setActionMenu(null);
-    setPage(next);
-    setDetail(null);
-    setWizard(null);
-    setQuery("");
+
+  const closePrompt = () => {
+    pickerEpoch.current++;
+    setCommandOpen(false);
+    setPicker(null);
+    setInput("");
+    setMenuSelected(0);
+  };
+
+  const clearFeedback = () => {
+    setError("");
+    setNotice("");
+  };
+
+  const openHome = () => {
+    setView({ kind: "home" });
+    setSelected(0);
+    setReport(null);
+    setRunFilter(null);
+    setProjectFilter(null);
+    clearFeedback();
+    closePrompt();
+  };
+
+  const openSection = (section: SectionKey, group?: GroupFilter) => {
+    setProjectFilter(group ?? null);
+    setView({ kind: "section", section });
+    setSelected(0);
+    setReport(null);
+    clearFeedback();
+    closePrompt();
+  };
+
+  const openCommands = () => {
+    pickerEpoch.current++;
+    setPicker(null);
+    setCommandOpen(true);
+    setInput("");
+    setMenuSelected(0);
     setError("");
   };
-  const newSession = () => {
-    setWizard({ stage: "project" });
-    setDetail(null);
-    setQuery("");
-    setFocus("content");
+
+  const openPicker = (
+    title: string,
+    action: (provider: string) => void,
+    interactiveOnly = false,
+    options?: PickerOption[],
+  ) => {
+    pickerEpoch.current++;
+    setCommandOpen(false);
+    setPicker({ title, action, interactiveOnly, options });
+    setInput("");
+    setMenuSelected(0);
+    setError("");
   };
-  const launch = (project?: string, agent?: string, provider = "codex") => {
-    setWizard(null);
+
+  const back = () => {
+    clearFeedback();
+    if (report) {
+      setReport(null);
+      return;
+    }
+    if (commandOpen || picker) {
+      closePrompt();
+      return;
+    }
+    if (view.kind === "detail") {
+      setView({ kind: "section", section: view.section });
+      return;
+    }
+    if (view.kind === "section") {
+      if (
+        projectFilter &&
+        (view.section === "sessions" || view.section === "automations")
+      ) {
+        setView({ kind: "detail", section: "projects", id: projectFilter.id });
+        setProjectFilter(null);
+        return;
+      }
+      if (view.section === "runs" && runFilter) {
+        const id = runFilter.automationId;
+        setRunFilter(null);
+        setView({ kind: "detail", section: "automations", id });
+        return;
+      }
+      openHome();
+      return;
+    }
+    setInput("");
+  };
+
+  const openForm = (spec: FormSpec) => {
+    clearFeedback();
+    setForm(spec);
+  };
+
+  const startSession = () => {
+    setWizard(true);
+    setInput("");
+    setMenuSelected(0);
+    clearFeedback();
+  };
+  const configureProviderDefaults = (provider: ProviderId) => {
+    const save = (defaults: ProviderDefaults) => {
+      void perform(async () => {
+        await app.setProviderDefaults(provider, defaults);
+        setNotice(`${provider} defaults saved`);
+      });
+    };
+    const showModels = (catalog?: ModelCatalog, discoveryError?: unknown) => {
+      openPicker(
+        `${provider} model`,
+        (id) => {
+          if (id === "default") {
+            save({});
+            return;
+          }
+          if (id === "retry") {
+            load();
+            return;
+          }
+          if (id === "loading") {
+            load();
+            return;
+          }
+          const model = catalog?.models.find((m) => `model:${m.id}` === id);
+          if (!model || !catalog) return;
+          // Keep both selections local until the second picker is confirmed.
+          openPicker(
+            `${provider} ${catalog.reasoningLabel} · ${model.id}`,
+            (reasoning) => {
+              save({
+                model: model.id,
+                ...(reasoning === "default"
+                  ? {}
+                  : { reasoning: reasoning.slice(10) }),
+              });
+            },
+            false,
+            [
+              {
+                id: "default",
+                name: "Use provider default",
+                description: `Default ${catalog.reasoningLabel} for ${model.id}`,
+              },
+              ...model.reasoning.map((r) => ({
+                id: `reasoning:${r.id}`,
+                name: r.id,
+                description: r.description ?? catalog.reasoningLabel,
+              })),
+            ],
+          );
+        },
+        false,
+        [
+          {
+            id: "default",
+            name: "Use provider default",
+            description: "Clear both model and reasoning overrides",
+          },
+          ...(catalog
+            ? catalog.models.map((m) => ({
+                id: `model:${m.id}`,
+                name: m.id,
+                description: m.name,
+              }))
+            : []),
+          ...(catalog?.models.length
+            ? []
+            : [
+                {
+                  id: catalog ? "retry" : discoveryError ? "retry" : "loading",
+                  name: catalog
+                    ? "No models available · Retry"
+                    : discoveryError
+                      ? "Discovery failed · Retry"
+                      : "Loading models…",
+                  description: discoveryError
+                    ? redact(errorMessage(discoveryError))
+                    : "Discover installed provider capabilities",
+                },
+              ]),
+        ],
+      );
+      if (discoveryError) fail(discoveryError);
+    };
+    const load = () => {
+      showModels();
+      const epoch = pickerEpoch.current;
+      void app
+        .modelCatalog(provider)
+        .then((catalog) => {
+          if (pickerEpoch.current === epoch) showModels(catalog);
+        })
+        .catch((error) => {
+          if (pickerEpoch.current === epoch) showModels(undefined, error);
+        });
+    };
+    load();
+  };
+  const resourceContext: ResourceContext = {
+    app,
+    providers,
+    preferredProvider,
+    setPreferredProvider,
+    defaultDirectory,
+    projectFilter,
+    runFilter,
+    setView,
+    setSelected,
+    setForm,
+    setNotice,
+    setConfirm,
+    setReport,
+    setRunFilter,
+    setDefaultDirectory,
+    setHomeDirectory,
+    refresh,
+    fail,
+    perform,
+    handoff,
+    openForm,
+    openPicker,
+    openSection,
+    configureProviderDefaults,
+    sessionLauncher,
+    activateSession,
+    selectDefaultProvider: () => selectDefaultProvider(),
+    startSession,
+  };
+  const resources: Record<SectionKey, ResourceView> = {
+    sessions: sessionsView(resourceContext),
+    projects: projectsView(resourceContext),
+    agents: agentsView(resourceContext),
+    skills: skillsView(resourceContext),
+    mcps: mcpsView(resourceContext),
+    providers: providersView(resourceContext),
+    automations: automationsView(resourceContext),
+    runs: runsView(resourceContext),
+    notifications: notificationsView(resourceContext),
+    settings: settingsView(resourceContext),
+  };
+
+  const activeSection =
+    view.kind === "section" || view.kind === "detail"
+      ? view.section
+      : undefined;
+  const rows = activeSection ? resources[activeSection].rows : [];
+  const safeSelected = Math.max(0, Math.min(selected, rows.length - 1));
+  const selectedRow = rows[safeSelected];
+  const detailRow =
+    view.kind === "detail" ? rows.find((row) => row.id === view.id) : undefined;
+  const contextRow = view.kind === "detail" ? detailRow : selectedRow;
+  const activeCopy = activeSection ? resources[activeSection].copy : null;
+  const notificationsUnread = app
+    .listNotifications()
+    .filter((item) => !item.read).length;
+
+  const projects = app.listProjects();
+  const agents = app.listAgents();
+
+  // ----- wizards -----------------------------------------------------------
+
+  const launch = (
+    project?: string,
+    agent?: string,
+    provider = "codex",
+    cwd?: string,
+  ) => {
+    setWizard(false);
+    setProjectFilter(null);
+    setInput("");
+    setMenuSelected(0);
     void perform(async () => {
       const session = await app.newSession(
-        { project, agent, provider },
-        handoff,
+        { project, agent, provider, cwd },
+        (run) => run(),
+        sessionLauncher,
       );
-      navigate("Sessions");
-      setNotice(`Session saved · ${session.id}`);
+      setView({ kind: "section", section: "sessions" });
+      setSelected(0);
+      setNotice(`Session saved · ${session.id.slice(0, 8)}`);
     });
   };
-  const projectForm = (id?: string) => {
-    const project = id ? app.project(id) : undefined;
-    setForm({
-      title: project ? "Edit project" : "New project",
-      fields: [
-        { label: "Name", value: project?.name ?? "" },
-        { label: "Working directory", value: project?.cwd ?? process.cwd() },
-        { label: "Description", value: project?.description ?? "" },
-      ],
-      save: (v) => {
-        if (project)
-          app.updateProject(project.id, {
-            name: v[0] ?? "",
-            cwd: v[1] ?? "",
-            description: v[2] ?? "",
-          });
-        else app.createProject(v[0] ?? "", v[1] ?? "", v[2]);
-        setForm(null);
-        setDetail(null);
-        refresh();
-      },
-    });
-  };
-  const newAgent = () =>
-    setForm({
-      title: "New agent",
-      fields: [
-        { label: "Name", value: "" },
-        { label: "Description", value: "" },
-        { label: "Instructions", value: "", multiline: true },
-      ],
-      save: (v) => {
-        app.createAgent(v[0] ?? "", v[2] ?? "", v[1]);
-        setForm(null);
-        refresh();
-      },
-    });
 
-  const yamlForm = (
-    title: string,
-    value: unknown,
-    save: (v: unknown) => void,
-  ) =>
-    setForm({
-      title,
-      fields: [
-        {
-          label: "Definition (YAML)",
-          value: stringify(value),
-          multiline: true,
-        },
-      ],
-      save: (v) => {
-        save(parse(v[0] ?? ""));
-        setForm(null);
-        setDetail(null);
-        refresh();
+  const newSession = useNewSession({
+    active: wizard,
+    inputActive: tabActive,
+    app,
+    providers,
+    defaultDirectory,
+    width,
+    height,
+    busy,
+    error,
+    notice,
+    fail,
+    setError,
+    cancel: () => {
+      setWizard(false);
+      clearFeedback();
+    },
+    launch,
+  });
+
+  const providerOptions: { id: string; name: string; description: string }[] =
+    picker?.options ??
+    (providers.length
+      ? providers.map((provider) => ({
+          id: provider.id,
+          name: provider.id,
+          description:
+            provider.reason ??
+            provider.version ??
+            (provider.interactive
+              ? "ready"
+              : provider.installed
+                ? "detected"
+                : "not installed"),
+        }))
+      : ["codex", "opencode", "agy"].map((id) => ({
+          id,
+          name: id,
+          description: "detect on use",
+        })));
+  const filteredProviders = providerOptions.filter((option) =>
+    matches(`${option.name} ${option.description}`, input),
+  );
+  const safeProvider = Math.max(
+    0,
+    Math.min(menuSelected, filteredProviders.length - 1),
+  );
+
+  const chooseProvider = () => {
+    if (!picker) return;
+    const option = filteredProviders[safeProvider];
+    if (!option) return;
+    if (
+      picker.interactiveOnly &&
+      !providers.find((provider) => provider.id === option.id)?.interactive
+    ) {
+      fail(
+        new Error(
+          providers.find((provider) => provider.id === option.id)?.reason ??
+            "Provider is unavailable. Install it and use /refresh.",
+        ),
+      );
+      return;
+    }
+    const action = picker.action;
+    closePrompt();
+    try {
+      action(option.id);
+      refresh();
+    } catch (value) {
+      fail(value);
+    }
+  };
+
+  const selectedProvider =
+    preferredProvider ??
+    providers.find(
+      (provider) => provider.id === "codex" && provider.interactive,
+    )?.id ??
+    providers.find((provider) => provider.interactive)?.id;
+  const selectedProviderInfo = providers.find(
+    (provider) => provider.id === selectedProvider,
+  );
+  const composeProject = projects.find((project) => project.id === homeProject);
+  const composeAgent = agents.find((agent) => agent.id === homeAgent);
+
+  const selectDefaultProvider = () => selectSessionProvider(resourceContext);
+
+  const openRow = (section: SectionKey, row: Row) => {
+    if (resources[section].open?.(row)) return;
+    setView({ kind: "detail", section, id: row.id });
+    setReport(null);
+    clearFeedback();
+  };
+  const contextCommands: Command[] =
+    activeSection && contextRow
+      ? [
+          ...(view.kind === "section"
+            ? [
+                {
+                  name: "open",
+                  description: `Open ${contextRow.name}`,
+                  group: "context" as const,
+                  run: () => openRow(activeSection, contextRow),
+                },
+              ]
+            : []),
+          ...resources[activeSection].commands(contextRow),
+        ]
+      : [];
+  const sectionCommands = activeSection
+    ? resources[activeSection].sectionCommands
+    : [];
+
+  const navigationCommands: Command[] = [
+    resources.settings.navigation,
+    ...(resources.sessions.creation ? [resources.sessions.creation] : []),
+    ...(
+      [
+        "sessions",
+        "projects",
+        "automations",
+        "agents",
+        "skills",
+        "mcps",
+        "providers",
+        "runs",
+        "notifications",
+      ] as const
+    ).map((section) => resources[section].navigation),
+  ];
+
+  const systemCommands: Command[] = [
+    {
+      name: "provider",
+      description: "Choose the provider for your next message",
+      group: "system",
+      run: selectDefaultProvider,
+    },
+  ];
+  if (view.kind === "home")
+    systemCommands.push(
+      ...homeCommands({
+        app,
+        openForm,
+        homeDirectory,
+        setHomeDirectory,
+        setForm,
+        composeProject,
+        composeAgent,
+        setHomeProject,
+        setHomeAgent,
+      }),
+    );
+  if (view.kind !== "home" || report || wizard)
+    systemCommands.push({
+      name: "back",
+      description: "Return to the previous screen",
+      group: "system",
+      run: back,
+    });
+  if (view.kind !== "home" || report)
+    systemCommands.push({
+      name: "home",
+      description: "Return to the launch screen",
+      group: "system",
+      run: openHome,
+    });
+  systemCommands.push(
+    {
+      name: "help",
+      description: "Browse every command",
+      group: "system",
+      run: openCommands,
+    },
+    {
+      name: "refresh",
+      description: "Re-detect providers and reload data",
+      group: "system",
+      run: () => {
+        void perform(async () => {
+          setProviders(await app.detectProviders());
+          app.recoverSessions();
+          setNotice("Reloaded");
+        });
       },
-    });
-  const chooseProvider = (action: (provider: string) => void) => {
-    setQuery("");
-    setFocus("content");
-    setActionMenu({
-      title: "Select provider",
-      choices: ["codex", "opencode", "agy"].map((provider) => ({
-        name: provider,
-        description: "Use native global configuration",
-        action: () => {
-          try {
-            action(provider);
-            setActionMenu(null);
-            refresh();
-          } catch (error) {
-            fail(error);
-          }
-        },
-      })),
-    });
+    },
+    {
+      name: "quit",
+      description: "Exit agentos",
+      group: "system",
+      run: () => renderer.destroy(),
+    },
+  );
+
+  const seen = new Set<string>();
+  const commands = [
+    ...contextCommands,
+    ...sectionCommands,
+    ...navigationCommands,
+    ...systemCommands,
+  ].filter((command) => {
+    if (seen.has(command.name)) return false;
+    seen.add(command.name);
+    return true;
+  });
+
+  const creationCommand = activeSection
+    ? resources[activeSection].creation
+    : undefined;
+
+  const filteredCommands = matchCommands(commands, input);
+  const safeMenu = Math.max(
+    0,
+    Math.min(menuSelected, filteredCommands.length - 1),
+  );
+
+  const runCommand = (command: Command) => {
+    closePrompt();
+    clearFeedback();
+    try {
+      command.run();
+    } catch (value) {
+      fail(value);
+    }
   };
-  const importForm = () =>
-    setForm({
-      title: `Import ${page}`,
-      fields: [
-        {
-          label: page === "Skills" ? "Skill directory" : "Definition file",
-          value: "",
-        },
-      ],
-      save: (v) => {
-        const path = v[0] ?? "";
-        if (page === "Skills") app.skills.import(path);
-        else if (page === "Agents") {
-          const definition = parseAgent(readFileSync(path, "utf8"));
-          app.createAgent(
-            definition.name,
-            definition.instructions,
-            definition.description,
-          );
-        } else if (page === "MCPs")
-          app.mcps.register(parse(readFileSync(path, "utf8")));
-        else app.automations.import(path);
-        setForm(null);
-        refresh();
-      },
-    });
-  const showRuns = (id?: string) => {
-    setDetail(null);
-    setQuery("");
-    setActionMenu({
-      title: "Automation runs",
-      choices: app.automations.history(id).map((r) => ({
-        name: `${r.status} · ${new Date(r.startedAt).toLocaleString()}`,
-        description: r.id,
-        action: () => {
-          setActionMenu(null);
-          setDetail({
-            title: "Automation run",
-            body: JSON.stringify(app.automations.runDetails(r.id), null, 2),
-            runId: r.id,
-          });
-        },
-      })),
-    });
+
+  const isPicker = picker !== null;
+  const promptVisible = commandOpen || isPicker;
+
+  const activeRowForDetail = detailRow;
+  const detailTitle =
+    report?.title ??
+    activeRowForDetail?.name ??
+    (view.kind === "detail" ? view.id : undefined);
+  const headerDetail =
+    detailTitle ??
+    (activeSection === "sessions" || activeSection === "automations"
+      ? projectFilter?.name
+      : undefined) ??
+    (activeSection === "runs" ? runFilter?.name : undefined);
+  const headerTitle = activeCopy?.title ?? "agentos";
+  const headerRight = `${plural(rows.length, activeCopy?.noun ?? "item")}${notificationsUnread && activeSection !== "notifications" ? `  ·  ${notificationsUnread} unread` : ""}`;
+
+  const moveList = (delta: number) => {
+    if (rows.length === 0) return;
+    setSelected((safeSelected + delta + rows.length) % rows.length);
   };
-  const launchAutomation = async (id: string, retryId?: string) => {
-    const pid = await app.automations.launch(id, retryId);
-    setNotice(`Background execution started · PID ${pid}`);
-    refresh();
+
+  const moveCommand = (delta: number) => {
+    if (filteredCommands.length === 0) return;
+    setMenuSelected(
+      (safeMenu + delta + filteredCommands.length) % filteredCommands.length,
+    );
   };
+
+  const moveProvider = (delta: number) => {
+    if (filteredProviders.length === 0) return;
+    setMenuSelected(
+      (safeProvider + delta + filteredProviders.length) %
+        filteredProviders.length,
+    );
+  };
+
+  const sendHomeMessage = useHomeLaunch({
+    app,
+    busy,
+    detecting,
+    draft,
+    selectedProviderInfo,
+    homeDirectory,
+    composeProject,
+    composeAgent,
+    setPreferredProvider,
+    handoff: (run) => run(),
+    sessionLauncher,
+    attached,
+    currentDraft: () => draftRef.current,
+    perform,
+    fail,
+    updateDraft,
+    onSaved: (id) => {
+      setProjectFilter(null);
+      setView({ kind: "section", section: "sessions" });
+      setSelected(0);
+      setNotice(`Session saved · ${id.slice(0, 8)}`);
+    },
+  });
+
+  const submitHome = () => {
+    if (busy) return;
+    if (picker) {
+      chooseProvider();
+      return;
+    }
+    if (commandOpen) {
+      const command = filteredCommands[safeMenu];
+      if (command) runCommand(command);
+      return;
+    }
+    sendHomeMessage();
+  };
+
+  const submitView = () => {
+    if (isPicker) {
+      chooseProvider();
+      return;
+    }
+    if (commandOpen) {
+      const command = filteredCommands[safeMenu];
+      if (command) runCommand(command);
+      return;
+    }
+    openCommands();
+  };
+
+  const paletteCommands: PaletteItem[] = filteredCommands.map((command) => ({
+    name: command.name,
+    description: command.description,
+  }));
+  const paletteProviders: PaletteItem[] = filteredProviders.map((option) => ({
+    name: option.name,
+    description: option.description,
+  }));
+
   useKeyboard((key) => {
+    if (!tabActive || key.defaultPrevented) return;
     try {
       if (key.ctrl && key.name === "q" && !busy) {
         renderer.destroy();
         return;
       }
       if (busy || form) return;
+      if (wizard) {
+        newSession.handleKey(key);
+        return;
+      }
       if (confirm) {
         if (key.name === "y") {
+          key.preventDefault();
           try {
             confirm.action();
-            setDetail(null);
             refresh();
           } catch (value) {
             fail(value);
           }
           setConfirm(null);
         }
-        if (key.name === "n" || key.name === "escape") setConfirm(null);
+        if (key.name === "n" || key.name === "escape") {
+          key.preventDefault();
+          setConfirm(null);
+        }
+        return;
+      }
+      if (key.ctrl && key.name === "p") {
+        key.preventDefault();
+        openCommands();
+        return;
+      }
+      if (commandOpen) {
+        if (key.name === "escape") {
+          key.preventDefault();
+          closePrompt();
+          return;
+        }
+        if (key.name === "up") {
+          key.preventDefault();
+          moveCommand(-1);
+          return;
+        }
+        if (key.name === "down") {
+          key.preventDefault();
+          moveCommand(1);
+          return;
+        }
+        return;
+      }
+      if (isPicker) {
+        if (key.name === "escape") {
+          key.preventDefault();
+          closePrompt();
+          return;
+        }
+        if (key.name === "up") {
+          key.preventDefault();
+          moveProvider(-1);
+          return;
+        }
+        if (key.name === "down") {
+          key.preventDefault();
+          moveProvider(1);
+          return;
+        }
         return;
       }
       if (key.name === "escape") {
-        setActionMenu(null);
-        setDetail(null);
-        setWizard(null);
-        setQuery("");
-        setFocus("nav");
-        setError("");
-        return;
-      }
-      if (key.name === "tab") {
         key.preventDefault();
-        setFocus((f) => (f === "nav" ? "content" : "nav"));
+        back();
         return;
       }
-      if (focus === "search") {
-        if (key.name === "return") setFocus("content");
+      if (view.kind === "home") {
+        if (key.name === "/" && !draftRef.current) {
+          key.preventDefault();
+          openCommands();
+        }
         return;
       }
-      if (key.name === "/" && !detail) {
+      if (key.name === "/") {
         key.preventDefault();
-        setFocus("search");
+        openCommands();
         return;
       }
-      if (key.name === "n") {
-        if (page === "Projects") projectForm();
-        if (page === "Agents") newAgent();
-        if (page === "Skills")
-          setForm({
-            title: "New skill",
-            fields: [
-              { label: "Name (lowercase-hyphenated)", value: "" },
-              { label: "Description", value: "" },
-              { label: "Instructions", value: "", multiline: true },
-            ],
-            save: (v) => {
-              app.skills.create(v[0] ?? "", v[1] ?? "", v[2] ?? "");
-              setForm(null);
-              refresh();
-            },
-          });
-        if (page === "MCPs")
-          yamlForm(
-            "Register MCP",
-            {
-              name: "my-server",
-              transport: "stdio",
-              command: "",
-              args: [],
-              envRefs: {},
-            },
-            (v) => {
-              app.mcps.register(v);
-            },
-          );
-        if (page === "Automations")
-          yamlForm(
-            "New automation",
-            {
-              version: 1,
-              name: "My automation",
-              slug: "my-automation",
-              cwd: process.cwd(),
-              schedule: { kind: "manual" },
-              steps: [
-                {
-                  name: "Execute",
-                  provider: "codex",
-                  prompt: "",
-                },
-              ],
-            },
-            (v) => {
-              app.automations.save(v);
-            },
-          );
-        if (page === "Sessions" || page === "Dashboard") newSession();
+      const detailVisible = report !== null || view.kind === "detail";
+      const plain = !key.ctrl && !key.meta && !key.super;
+
+      if (plain && key.name === "n" && creationCommand) {
+        key.preventDefault();
+        runCommand(creationCommand);
+        return;
       }
-      if (
-        key.name === "i" &&
-        ["Agents", "Skills", "MCPs", "Automations"].includes(page)
-      )
-        importForm();
-      if (key.name === "w" && page === "Automations")
-        setConfirm({
-          message:
-            "Install and start the persistent systemd user scheduler? [y/n]",
-          action: () => {
-            void perform(async () => {
-              await installWorker(app.paths, true);
-              setNotice("Persistent scheduler enabled");
-            });
-          },
-        });
-      if (key.name === "s" && page === "Automations")
-        void perform(async () => {
-          setNotice(await workerStatus());
-        });
-      if (key.name === "g" && detail?.projectId) {
-        const id = detail.projectId;
-        setForm({
-          title: "Project instructions",
-          fields: [
-            {
-              label: "AGENTS.md",
-              value: app.readInstructions(id),
-              multiline: true,
-            },
-          ],
-          save: (v) => {
-            app.saveInstructions(id, v[0] ?? "");
-            setForm(null);
-          },
-        });
+
+      if (plain && (key.name === "left" || key.name === "h")) {
+        key.preventDefault();
+        back();
+        return;
       }
-      if (key.name === "l" && detail?.skillId)
-        chooseProvider((p) => app.skills.install(detail.skillId ?? "", p));
-      if (key.name === "x" && detail?.skillId)
-        chooseProvider((p) => app.skills.uninstall(detail.skillId ?? "", p));
-      if (key.name === "e" && detail?.skillId)
-        void perform(async () => {
-          const id = detail.skillId ?? "";
-          await handoff(() =>
-            runInteractive(
-              process.env.VISUAL || process.env.EDITOR || "vi",
-              [app.skills.file(id)],
-              process.cwd(),
-            ),
-          );
-          app.skills.sync(id);
-          setDetail(null);
-        });
-      if (key.name === "d" && detail?.skillId)
-        setConfirm({
-          message: "Delete this managed skill and its owned links? [y/n]",
-          action: () => app.skills.remove(detail.skillId ?? ""),
-        });
-      if (key.name === "e" && detail?.mcpId)
-        yamlForm("Edit MCP", app.mcps.get(detail.mcpId).definition, (v) =>
-          app.mcps.update(detail.mcpId ?? "", v),
-        );
-      if (key.name === "l" && detail?.mcpId)
-        chooseProvider((p) => app.mcps.install(detail.mcpId ?? "", p));
-      if (key.name === "x" && detail?.mcpId)
-        chooseProvider((p) => app.mcps.uninstall(detail.mcpId ?? "", p));
-      if (key.name === "t" && detail?.mcpId)
-        chooseProvider((p) => app.mcps.install(detail.mcpId ?? "", p, false));
-      if (key.name === "d" && detail?.mcpId)
-        setConfirm({
-          message: "Delete this MCP and its owned installations? [y/n]",
-          action: () => app.mcps.remove(detail.mcpId ?? ""),
-        });
-      if (key.name === "r" && detail?.automationId)
-        void perform(() => launchAutomation(detail.automationId ?? ""));
-      if (key.name === "e" && detail?.automationId)
-        yamlForm(
-          "Edit automation",
-          app.automations.definition(detail.automationId),
-          (v) => {
-            app.automations.save(v, undefined, detail.automationId);
-          },
-        );
-      if (key.name === "h" && detail?.automationId)
-        showRuns(detail.automationId);
-      if (key.name === "h" && page === "Automations" && !detail) showRuns();
-      if (key.name === "t" && detail?.automationId) {
-        app.automations.enable(
-          detail.automationId,
-          !app.automations.get(detail.automationId).enabled,
-        );
-        refresh();
+
+      if (detailVisible) {
+        if (plain && key.name === "j") {
+          key.preventDefault();
+          detailScroll.current?.scrollBy(1);
+          return;
+        }
+        if (plain && key.name === "k") {
+          key.preventDefault();
+          detailScroll.current?.scrollBy(-1);
+          return;
+        }
+        return;
       }
-      if (key.name === "d" && detail?.automationId)
-        setConfirm({
-          message:
-            "Delete this automation? Runs must be retained; disable if history exists. [y/n]",
-          action: () => app.automations.remove(detail.automationId ?? ""),
-        });
-      if (key.name === "x" && detail?.runId) {
-        app.automations.cancel(detail.runId);
-        refresh();
+
+      if (view.kind === "section") {
+        if (key.name === "up" || (plain && key.name === "k")) {
+          key.preventDefault();
+          moveList(-1);
+          return;
+        }
+        if (key.name === "down" || (plain && key.name === "j")) {
+          key.preventDefault();
+          moveList(1);
+          return;
+        }
+        if (
+          key.name === "return" ||
+          (plain && (key.name === "right" || key.name === "l"))
+        ) {
+          key.preventDefault();
+          if (activeSection && selectedRow) openRow(activeSection, selectedRow);
+        }
       }
-      if (key.name === "r" && detail?.runId)
-        void perform(() =>
-          launchAutomation(
-            app.automations.runDetails(detail.runId ?? "").automationId,
-            detail.runId,
-          ),
-        );
-      if (key.name === "d" && detail?.agentId)
-        setConfirm({
-          message: "Delete this managed role definition? [y/n]",
-          action: () => app.removeAgent(detail.agentId ?? ""),
-        });
-      if (key.name === "r" && detail?.sessionId)
-        void perform(() => app.resumeSession(detail.sessionId ?? "", handoff));
-      if (key.name === "h" && detail?.sessionId)
-        void perform(async () => {
-          const history = await app.history(detail.sessionId ?? "");
-          setDetail({
-            ...detail,
-            title: "Native history · latest 20 turns",
-            body: JSON.stringify(history, null, 2),
-          });
-        });
-      if (key.name === "e" && detail?.projectId) projectForm(detail.projectId);
-      if (key.name === "d" && detail?.projectId)
-        setConfirm({
-          message:
-            "Remove this project's metadata? Workspace files are preserved. [y/n]",
-          action: () => app.removeProject(detail.projectId ?? ""),
-        });
-      if (key.name === "e" && detail?.agentId)
-        void perform(async () => {
-          const id = detail.agentId ?? "";
-          const file = app.agentFile(id);
-          const result = await handoff(() =>
-            runInteractive(
-              process.env.VISUAL || process.env.EDITOR || "vi",
-              [file],
-              process.cwd(),
-            ),
-          );
-          if (result !== 0) throw new Error(`Editor exited ${result}`);
-          app.syncAgent(id);
-          setDetail(null);
-        });
-    } catch (error) {
-      fail(error);
+    } catch (value) {
+      fail(value);
     }
   });
 
-  // Database reads are synchronous and small; refresh on metadata changes and
-  // the lightweight status interval, without introducing a second state store.
-  void revision;
-  const projects = app.listProjects();
-  const agents = app.listAgents();
-  const sessions = app.listSessions();
-  const choices: Choice[] = [];
-  if (actionMenu) {
-    choices.push(...actionMenu.choices);
-  } else if (wizard?.stage === "project") {
-    choices.push({
-      name: "No project",
-      description: process.cwd(),
-      action: () => {
-        setWizard({ stage: "agent" });
-        setQuery("");
-      },
-    });
-    for (const p of projects)
-      choices.push({
-        name: p.name,
-        description: p.cwd,
-        action: () => {
-          setWizard({ stage: "agent", project: p.id });
-          setQuery("");
-        },
-      });
-  } else if (wizard?.stage === "agent") {
-    choices.push({
-      name: "No agent",
-      description: "Use native provider instructions",
-      action: () => {
-        setWizard({ ...wizard, stage: "provider" });
-        setQuery("");
-      },
-    });
-    for (const a of agents)
-      choices.push({
-        name: a.name,
-        description: a.description,
-        action: () => {
-          setWizard({ ...wizard, stage: "provider", agent: a.id });
-          setQuery("");
-        },
-      });
-  } else if (wizard?.stage === "provider") {
-    for (const p of providers.filter((p) => p.interactive))
-      choices.push({
-        name: p.id,
-        description: p.reason ?? p.version ?? "",
-        action: () => launch(wizard.project, wizard.agent, p.id),
-      });
-  } else if (page === "Dashboard") {
-    choices.push({
-      name: "Start a native session",
-      description: "Choose a project and optional agent",
-      action: newSession,
-    });
-    const allRuns = app.automations.history();
-    const dashboardRuns = [
-      ...allRuns.filter((r) => r.status === "running"),
-      ...allRuns
-        .filter((r) =>
-          ["failed", "attention", "interrupted"].includes(r.status),
-        )
-        .slice(0, 3),
-      ...allRuns.filter((r) => r.status === "completed").slice(0, 5),
-    ];
-    for (const run of dashboardRuns)
-      choices.push({
-        name: `${app.automations.get(run.automationId).name} · ${run.status}`,
-        description: `${run.cwd} · ${new Date(run.startedAt).toLocaleString()}`,
-        action: () =>
-          setDetail({
-            title: "Automation run",
-            body: JSON.stringify(app.automations.runDetails(run.id), null, 2),
-            runId: run.id,
-          }),
-      });
-    for (const schedule of app.automations
-      .upcoming()
-      .filter((s) => s.nextAt !== null)
-      .slice(0, 3))
-      choices.push({
-        name: `Upcoming · ${app.automations.get(schedule.automationId).name}`,
-        description: new Date(schedule.nextAt ?? 0).toLocaleString(),
-        action: () => {
-          navigate("Automations");
-        },
-      });
-    for (const note of app
-      .listNotifications()
-      .filter((n) => !n.read)
-      .slice(0, 5))
-      choices.push({
-        name: `● ${note.message}`,
-        description: new Date(note.createdAt).toLocaleString(),
-        action: () => {
-          app.readNotification(note.id);
-          refresh();
-        },
-      });
-    for (const s of sessions.slice(0, 5))
-      choices.push({
-        name: `${projects.find((p) => p.id === s.projectId)?.name ?? "No project"} · ${s.status}`,
-        description: `${s.provider} · ${s.cwd}`,
-        action: () => {
-          navigate("Sessions");
-          setDetail({
-            title: "Session",
-            body: JSON.stringify(s, null, 2),
-            sessionId: s.id,
-          });
-        },
-      });
-  } else if (page === "Providers") {
-    for (const p of providers)
-      choices.push({
-        name: `${p.id} · ${p.interactive ? "ready" : p.installed ? "detected" : "missing"}`,
-        description: p.reason ?? p.version ?? "",
-        action: () =>
-          setDetail({ title: p.id, body: JSON.stringify(p, null, 2) }),
-      });
-  } else if (page === "Projects") {
-    for (const p of projects)
-      choices.push({
-        name: p.name,
-        description: p.cwd,
-        action: () =>
-          setDetail({
-            title: p.name,
-            body: `${p.description}\n\n${p.cwd}\n\nID: ${p.id}`,
-            projectId: p.id,
-          }),
-      });
-  } else if (page === "Agents") {
-    for (const a of agents)
-      choices.push({
-        name: a.name,
-        description: a.description,
-        action: () => {
-          try {
-            const definition = app.agentDefinition(a.id);
-            setDetail({
-              title: definition.name,
-              body: `${definition.description}\n\n${definition.instructions}\n\n${app.agentFile(a.id)}`,
-              agentId: a.id,
-            });
-          } catch (value) {
-            fail(value);
-          }
-        },
-      });
-  } else if (page === "Skills") {
-    for (const skill of app.skills.list())
-      choices.push({
-        name: skill.name,
-        description: skill.description,
-        action: () => {
-          try {
-            setDetail({
-              title: skill.name,
-              body:
-                readFileSync(app.skills.file(skill.id), "utf8") +
-                "\n\n" +
-                JSON.stringify(app.skills.links(skill.id), null, 2),
-              skillId: skill.id,
-            });
-          } catch (error) {
-            fail(error);
-          }
-        },
-      });
-    choices.push({
-      name: "Discover native skills",
-      description: "Inspect provider-native discovery directories",
-      action: () =>
-        chooseProvider((p) => {
-          setDetail({
-            title: "Native skills",
-            body: JSON.stringify(app.skills.discover(p), null, 2),
-          });
-        }),
-    });
-  } else if (page === "MCPs") {
-    for (const m of app.mcps.list())
-      choices.push({
-        name: m.name,
-        description: m.definition.transport,
-        action: () =>
-          setDetail({
-            title: m.name,
-            body:
-              stringify(m.definition) +
-              "\n" +
-              JSON.stringify(app.mcps.installations(m.id), null, 2),
-            mcpId: m.id,
-          }),
-      });
-  } else if (page === "Automations") {
-    for (const a of app.automations.list())
-      choices.push({
-        name: `${a.name} · ${a.enabled ? "enabled" : "disabled"}`,
-        description: a.cwd,
-        action: () => {
-          try {
-            setDetail({
-              title: a.name,
-              body: stringify(app.automations.definition(a.id)),
-              automationId: a.id,
-            });
-          } catch (error) {
-            fail(error);
-          }
-        },
-      });
-  } else {
-    for (const s of sessions)
-      choices.push({
-        name: `${projects.find((p) => p.id === s.projectId)?.name ?? "No project"} · ${s.status}`,
-        description: `${s.provider} · ${new Date(s.createdAt).toLocaleString()} · ${s.id}`,
-        action: () =>
-          setDetail({
-            title: "Session",
-            body: JSON.stringify(s, null, 2),
-            sessionId: s.id,
-          }),
-      });
-  }
-  const filtered = choices.filter((c) =>
-    `${c.name} ${c.description}`.toLowerCase().includes(query.toLowerCase()),
+  const renderHome = (active: boolean) => (
+    <Home
+      active={active && tabActive}
+      terminalWidth={terminalWidth}
+      terminalHeight={terminalHeight}
+      commandOpen={commandOpen}
+      picker={picker}
+      input={input}
+      draft={draft}
+      busy={busy}
+      detecting={detecting}
+      homeDirectory={homeDirectory}
+      selectedProvider={selectedProvider}
+      modelSummary={
+        selectedProvider
+          ? (() => {
+              const defaults = app.providerDefaults(selectedProvider);
+              return defaults.model
+                ? `${defaults.model} · ${defaults.reasoning ?? "provider default"}`
+                : "Provider model default";
+            })()
+          : undefined
+      }
+      selectedProviderInfo={selectedProviderInfo}
+      composeAgent={composeAgent}
+      composeProject={composeProject}
+      paletteProviders={paletteProviders}
+      paletteCommands={paletteCommands}
+      safeProvider={safeProvider}
+      safeMenu={safeMenu}
+      error={error}
+      notice={notice}
+      setInput={setInput}
+      setMenuSelected={setMenuSelected}
+      setCommandOpen={setCommandOpen}
+      updateDraft={updateDraft}
+      submitHome={submitHome}
+    />
   );
-  let detailBody = detail?.body ?? "";
-  try {
-    if (detail?.sessionId && detail.title === "Session")
-      detailBody = JSON.stringify(app.session(detail.sessionId), null, 2);
-    else if (detail?.runId)
-      detailBody = JSON.stringify(
-        app.automations.runDetails(detail.runId),
-        null,
-        2,
-      );
-    else if (detail?.skillId)
-      detailBody =
-        readFileSync(app.skills.file(detail.skillId), "utf8") +
-        "\n\n" +
-        JSON.stringify(app.skills.links(detail.skillId), null, 2);
-    else if (detail?.mcpId)
-      detailBody =
-        stringify(app.mcps.get(detail.mcpId).definition) +
-        "\n" +
-        JSON.stringify(app.mcps.installations(detail.mcpId), null, 2);
-    else if (detail?.automationId)
-      detailBody = stringify(app.automations.definition(detail.automationId));
-  } catch (error) {
-    detailBody = redact(errorMessage(error));
-  }
-  if (width < 65 || height < 18)
+
+  // ----- render ------------------------------------------------------------
+
+  if (terminalWidth < 65 || terminalHeight < 18)
     return (
       <box padding={1}>
         <text fg={colors.text}>
-          Agent OS needs at least 65 columns × 18 rows. Resize the terminal.
-          Ctrl+Q quits.
+          Resize the terminal to at least 65 columns × 18 rows. Ctrl+Q quits.
         </text>
       </box>
     );
-  return (
-    <box
-      width="100%"
-      height="100%"
-      backgroundColor={colors.bg}
-      flexDirection="column"
-      padding={1}
-    >
-      <box height={3} flexDirection="row" justifyContent="space-between">
-        <text fg={colors.accent}>
-          <b>◈ AGENT OS</b>
-        </text>
-        <text fg={colors.muted}>local workspace · v0.1</text>
-      </box>
-      <box flexDirection="row" flexGrow={1} gap={2}>
+
+  if (form)
+    return (
+      <ModalSurface
+        backdrop={renderHome(false)}
+        width={modalWidth}
+        height={modalHeight}
+      >
         <box
-          width={23}
+          width="100%"
+          height="100%"
+          backgroundColor={colors.bg}
           flexDirection="column"
-          border
-          borderColor={focus === "nav" ? colors.accent : colors.line}
-          padding={1}
-          gap={1}
         >
-          <text fg={colors.muted}>WORKSPACE</text>
-          <select
-            focused={focus === "nav" && !form && !busy && !confirm}
-            height={Math.min(8, Math.max(3, height - 16))}
-            options={pages.map((name) => ({ name, description: "" }))}
-            selectedIndex={pages.indexOf(page)}
-            showDescription={false}
-            selectedBackgroundColor={colors.line}
-            selectedTextColor={colors.accent}
-            textColor={colors.text}
-            backgroundColor={colors.bg}
-            onSelect={(index) => {
-              const next = pages[index];
-              if (next) {
-                navigate(next);
-                setFocus("content");
-              }
+          <Form
+            embedded
+            active={tabActive}
+            availableWidth={width}
+            availableHeight={height}
+            spec={form}
+            cancel={() => {
+              setForm(null);
+              setError("");
             }}
+            fail={fail}
+            error={error}
+            clearError={() => setError("")}
           />
-          <box flexGrow={1} />
-          {height >= 25 && (
-            <text
-              fg={colors.muted}
-            >{`${providers.filter((p) => p.interactive).length} provider ready\n${projects.length} projects\n${sessions.length} sessions`}</text>
-          )}
         </box>
-        <box
-          flexGrow={1}
-          flexDirection="column"
-          border
-          borderColor={focus !== "nav" ? colors.accent : colors.line}
-          padding={1}
-          gap={1}
-        >
-          {form ? (
-            <Form spec={form} cancel={() => setForm(null)} fail={fail} />
-          ) : (
-            <>
-              <text fg={colors.accent}>
-                <b>
-                  {wizard
-                    ? `New session · select ${wizard.stage}`
-                    : (actionMenu?.title ?? detail?.title ?? page)}
-                </b>
-              </text>
-              {page === "Dashboard" && !wizard && !detail && (
-                <text
-                  fg={colors.muted}
-                >{`Native providers. Your projects. Persistent sessions.\n${sessions.filter((s) => s.status === "attached").length} attached · ${sessions.filter((s) => s.status === "failed").length} failed launches`}</text>
-              )}
-              {detail && !actionMenu ? (
-                <scrollbox flexGrow={1} focused={focus === "content"}>
-                  <text fg={colors.text}>{detailBody}</text>
-                </scrollbox>
-              ) : (
-                <>
-                  <input
-                    placeholder="/ search"
-                    value={query}
-                    focused={focus === "search"}
-                    onInput={setQuery}
-                    backgroundColor={colors.panel}
-                    textColor={colors.text}
-                  />
-                  {filtered.length ? (
-                    <select
-                      key={`${page}-${wizard?.stage ?? "list"}-${query}`}
-                      options={filtered}
-                      focused={focus === "content" && !busy && !confirm}
-                      flexGrow={1}
-                      selectedBackgroundColor={colors.line}
-                      selectedTextColor={colors.accent}
-                      textColor={colors.text}
-                      descriptionColor={colors.muted}
-                      backgroundColor={colors.bg}
-                      showScrollIndicator
-                      onSelect={(index) => {
-                        try {
-                          filtered[index]?.action();
-                        } catch (error) {
-                          fail(error);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <text fg={colors.muted}>
-                      {providers.length === 0 && page === "Providers"
-                        ? "Detecting providers…"
-                        : "No entries. Press n to create one where supported."}
-                    </text>
-                  )}
-                </>
-              )}
-              <text fg={colors.muted}>
-                {detail?.sessionId
-                  ? "r resume · h history · Esc back"
-                  : detail?.projectId
-                    ? "e edit · g instructions · d remove · Esc back"
-                    : detail?.agentId
-                      ? "e edit · d remove · Esc back"
-                      : detail?.skillId
-                        ? "e edit · l install · x unlink · d delete"
-                        : detail?.mcpId
-                          ? "e edit · l install/enable · t disable · x uninstall · d delete"
-                          : detail?.automationId
-                            ? "r run · e edit · h history · t toggle · d delete"
-                            : detail?.runId
-                              ? "x cancel · r retry · Esc back"
-                              : page === "Automations"
-                                ? "n new · i import · h runs · w scheduler install · s status"
-                                : ["Skills", "MCPs", "Agents"].includes(page)
-                                  ? "n new · i import · Enter open"
-                                  : "Enter open · n new · / search"}
-              </text>
-            </>
-          )}
-        </box>
-      </box>
-      <box minHeight={2} marginTop={1} flexDirection="column">
-        <text fg={error ? colors.error : colors.accent}>
-          {error || confirm?.message || (busy ? "Working…" : notice)}
-        </text>
-        <text fg={colors.muted}>
-          Tab switch focus · ↑↓ navigate · Esc back · Ctrl+Q quit
-        </text>
-      </box>
-    </box>
+      </ModalSurface>
+    );
+
+  if (wizard)
+    return (
+      <ModalSurface
+        backdrop={renderHome(false)}
+        width={modalWidth}
+        height={modalHeight}
+      >
+        {newSession.render()}
+      </ModalSurface>
+    );
+
+  if (view.kind === "home") return renderHome(true);
+  return (
+    <ResourceModal
+      backdrop={renderHome(false)}
+      modalWidth={modalWidth}
+      modalHeight={modalHeight}
+      width={width}
+      height={height}
+      commandOpen={commandOpen}
+      isPicker={isPicker}
+      filteredProviders={filteredProviders}
+      filteredCommands={filteredCommands}
+      safeSelected={safeSelected}
+      rows={rows}
+      view={view}
+      detailRow={detailRow}
+      report={report}
+      contextCommands={contextCommands}
+      headerTitle={headerTitle}
+      headerDetail={headerDetail}
+      headerRight={headerRight}
+      confirm={confirm}
+      detailScroll={detailScroll}
+      activeCopy={activeCopy}
+      activeSection={activeSection}
+      providers={providers}
+      paletteProviders={paletteProviders}
+      paletteCommands={paletteCommands}
+      safeProvider={safeProvider}
+      safeMenu={safeMenu}
+      picker={picker}
+      input={input}
+      interactive={tabActive}
+      promptVisible={promptVisible && tabActive}
+      setInput={setInput}
+      setMenuSelected={setMenuSelected}
+      submitView={submitView}
+      error={error}
+      busy={busy}
+      notice={notice}
+      creationCommand={creationCommand}
+    />
   );
 }
 
 export async function startTui(app: Application) {
   if (!process.stdin.isTTY || !process.stdout.isTTY)
     throw new Error(
-      "Agent OS TUI requires an interactive terminal; use agentos --help for direct commands",
+      "agentos TUI requires an interactive terminal; use agentos --help for direct commands",
     );
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
   const root = createRoot(renderer);
@@ -1056,5 +1078,6 @@ export async function startTui(app: Application) {
   } finally {
     root.unmount();
     renderer.destroy();
+    await app.settleInteractiveSessions();
   }
 }

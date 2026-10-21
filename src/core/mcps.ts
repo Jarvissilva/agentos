@@ -287,7 +287,7 @@ export class McpService {
       }
       if (processIdentity(owner.pid) === owner.identity)
         throw new Error(
-          "MCP configuration is being updated by another Agent OS process",
+          "MCP configuration is being updated by another agentos process",
         );
       rmSync(lock, { recursive: true });
       mkdirSync(lock, { mode: 0o700 });
@@ -309,8 +309,10 @@ export class McpService {
         );
       let next: string;
       if (nativeConfiguration(provider).format === "toml") {
-        const start = `# Agent OS begin ${entry}\n`,
-          end = `# Agent OS end ${entry}\n`;
+        const legacyStart = `# Agent OS begin ${entry}\n`;
+        const label = original.includes(legacyStart) ? "Agent OS" : "agentos";
+        const start = `# ${label} begin ${entry}\n`,
+          end = `# ${label} end ${entry}\n`;
         const begin = original.indexOf(start),
           finish = original.indexOf(end);
         if (old !== undefined && (begin < 0 || finish < begin))
@@ -324,7 +326,11 @@ export class McpService {
         const block = value
           ? TOML.stringify({ mcp_servers: { [entry]: value } } as TOML.JsonMap)
           : "";
-        next = without + (value ? `\n${start}${block}${end}` : "");
+        next =
+          without +
+          (value
+            ? `\n# agentos begin ${entry}\n${block}# agentos end ${entry}\n`
+            : "");
         const beforeDoc = TOML.parse(original),
           afterDoc = TOML.parse(next);
         // Verify that removing our block did not remove unrelated native entries.

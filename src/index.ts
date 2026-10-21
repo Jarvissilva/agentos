@@ -13,7 +13,7 @@ try {
   app.recoverSessions();
   await commands(app).parseAsync();
 } catch (error) {
-  console.error(`Agent OS: ${redact(errorMessage(error))}`);
+  console.error(`agentos: ${redact(errorMessage(error))}`);
   process.exitCode = 1;
 } finally {
   storage?.close();

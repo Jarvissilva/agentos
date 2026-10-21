@@ -1,4 +1,4 @@
-# Agent OS
+# agentos
 
 A local-first terminal application for projects, native AI providers, reusable roles, skills, MCP configuration, sessions, and scheduled automations. Bun + strict TypeScript + OpenTUI React + Commander + SQLite/Drizzle + Zod. No web service, inference loop, container, or external job infrastructure.
 
@@ -13,49 +13,81 @@ ln -s "$PWD/src/index.ts" ~/.local/bin/agentos
 agentos
 ```
 
-Requires Linux, Bun >=1.3.14, and GNU coreutils (`stty`). Tested on Arch Linux with Bun 1.4.3, OpenTUI 0.6.6, Codex 0.163.0, OpenCode 2.0.29, and Agy 1.4.3. Log in and configure models with each provider's own CLI. Keep this source checkout and its dependencies available; this release runs from source and loads migrations relative to it.
+Requires Linux, Bun >=1.3.14, GNU coreutils (`stty`), and util-linux (`setsid`) for embedded provider terminals. Tested on Arch Linux with Bun 1.4.3, OpenTUI 0.6.6, Codex 0.163.0, OpenCode 2.0.29, and Agy 1.4.3. Log in and configure models with each provider's own CLI. Keep this source checkout and its dependencies available; this release runs from source and loads migrations relative to it.
 
-Restart an already-open Agent OS instance to load newly added modules.
+Restart an already-open agentos instance to load newly added modules.
 
 ## Terminal interface
 
-Navigation: Dashboard, Providers, Projects, Agents, Skills, MCPs, Sessions, Automations. The dashboard includes recent sessions/runs, upcoming schedules, failures, and unread local notifications. Opening a notification marks it read. There is no replacement provider chat UI.
+agentos opens on a centered home screen with a message input. Type a task and press Enter to start a native provider session with that message. The selected provider, model and reasoning defaults, working directory, agent, and project appear beneath the input. Use `/provider` to choose an available provider; the last choice is remembered in `$XDG_CONFIG_HOME/agentos/preferences.json`. Without a saved choice, agentos prefers Codex when available, then the first available provider. An unavailable saved provider stays visible until you choose another.
+
+Use `/directory`, `/agent`, and `/project` on the home screen to configure the next session. Directory starts from the saved default, or where agentos was launched; agent and project default to none. The home context selections belong to each session tab and last for the current application instance. Use `/settings` to change persistent defaults. Resource lists, details, creation forms, and the session wizard open as centered modals over the home screen. Press `n` on Sessions, Projects, Agents, Skills, MCPs, or Automations to create an item. The shortcut is inactive in text inputs, selectors, and confirmation dialogs (`n` still cancels a confirmation). Every screen, resource, and action is reachable through the `/` command palette — there are no sidebar tabs or page-specific shortcuts to memorize. Press `/` in an empty home input, or Ctrl+P while drafting, to open the palette, type to filter commands by name or description, and press Enter to run the highlighted command. Commands prioritize exact names and name prefixes; otherwise actions for the item currently selected appear first. Closing commands, switching providers, or a launch error preserves your message. Slashes inside a message (such as paths) remain ordinary text. Empty messages do not launch sessions.
 
 | Key | Action |
 | --- | --- |
-| Arrows / Enter | Navigate / open |
-| Tab | Switch sidebar/content focus; next field in forms |
-| `/` | Search the current selector |
-| Esc | Back / cancel form |
-| Ctrl+Q | Quit Agent OS |
-| `n` / `i` | New / import on applicable resource pages |
-| Ctrl+S | Save form, including Markdown/YAML editors |
-| Session details: `r`, `h` | Resume native TUI / retrieve history |
-| Project details: `e`, `g`, `d` | Edit metadata / edit AGENTS.md / remove metadata |
-| Agent details: `e`, `d` | Edit Markdown / delete role |
-| Skill details: `e`, `l`, `x`, `d` | Edit / install / unlink / delete |
-| MCP details: `e`, `l`, `t`, `x`, `d` | Edit / install or enable / disable / uninstall / delete |
-| Automation details: `r`, `e`, `h`, `t`, `d` | Run / edit YAML / history / enable-disable / delete |
-| Run details: `x`, `r` | Cancel / retry from first unsuccessful step |
-| Automations page: `h`, `w`, `s` | Run history / install-start scheduler / scheduler status |
+| `/` in an empty home input / `/` on resource pages | Open the command palette |
+| Ctrl+P | Open commands while preserving the message draft |
+| Up / `k`, Down / `j` | Move through the palette, a list, or the session wizard; scroll a detail view |
+| Left / `h` | Back one level (detail → list → home) |
+| Right / `l` | Open the selected row in list views |
+| Enter | Send the home message / run a command / open a row |
+| Esc | Close the palette, cancel a form, or go back |
+| `n` | Create an item in the current resource modal |
+| Tab | Next field in a form |
+| `y` / `n` | Confirm / cancel a destructive action |
+| Ctrl+S | Save a form, including Markdown/YAML editors |
+| Ctrl+Q | Quit agentos |
 
-Native providers retain their own shortcuts and trust/approval screens. Terminal settings are saved/restored even after an abnormal provider/editor exit. `VISUAL`/`EDITOR` can name an executable or path; shell argument strings are deliberately not evaluated. Default editor: `vi`.
+Resource modals show the available shortcut hints. The vim aliases (`h`, `j`, `k`, `l`) are inactive while an input is focused — in the palette, wizard, picker, forms, or the home command box — so those letters can always be typed into a filter or field. Arrow keys always work.
+
+Commands include:
+
+| Group | Commands |
+| --- | --- |
+| Context | Home: `/directory`, `/agent`, `/project`; resources: `/project`, `/open`, `/resume`, `/history`, `/edit`, `/instructions`, `/delete`, `/install`, `/uninstall`, `/disable`, `/run`, `/runs`, `/toggle`, `/cancel`, `/retry` |
+| Create | `/new project`, `/new agent`, `/new skill`, `/new mcp`, `/new automation`, `/new session`, `/import agent\|skill\|mcp\|automation` |
+| Navigate | `/settings`, `/sessions`, `/projects`, `/automations`, `/agents`, `/skills`, `/mcps`, `/providers`, `/runs`, `/notifications` |
+| System | `/provider`, `/back`, `/home`, `/help`, `/refresh`, `/scheduler install`, `/scheduler status`, `/quit` |
+
+`/help` lists every command available on the current screen, including context actions for the selected row. `/new session` runs a four-step wizard: choose a project group (or none), enter the working directory, choose an agent (or none), then choose a provider. Destructive commands ask for `y`/`n` confirmation. Opening a notification marks it read. There is no replacement provider chat UI.
+
+Native providers retain their own shortcuts and trust/approval screens, except for the agentos tab shortcuts listed below. Terminal settings are saved/restored even after an abnormal provider/editor exit. `VISUAL`/`EDITOR` can name an executable or path; shell argument strings are deliberately not evaluated. Default editor: `vi`.
+
+## Embedded session tabs
+
+Interactive sessions launched in the agentos TUI now open the provider’s own interface inside an embedded terminal, beneath a persistent tab bar. Switching tabs leaves other provider interfaces running. Every blank tab retains its own message draft, directory, agent, project, forms, and navigation state while agentos is open.
+
+- **Ctrl+T:** open a blank session tab; enter a task to launch its provider.
+- **Ctrl+1–9:** select a tab. **Alt+1–9** and **Ctrl+PageUp/PageDown** are alternatives when a terminal cannot distinguish Ctrl+number keys. Tabs can also be clicked.
+- **Ctrl+W:** close the tab and detach its terminal frontend. This does not delete its saved conversation or explicitly stop its background service.
+- **F2:** switch between the provider terminal and that tab’s agentos dashboard. Provider slash commands remain provider commands; open the dashboard to use agentos commands.
+- **Ctrl+Q:** quit agentos and disconnect embedded frontends. Codex and OpenCode use their native background services; agentos does not shut those services down. Continuation depends on those provider services being enabled and running, and pending approvals can still require your attention.
+
+A dot on an inactive tab indicates new terminal output, not confirmed task completion. Exited or disconnected terminals remain visible until closed. To reconnect after restarting agentos, open Sessions and use `/resume`; resuming a session already open in another tab selects that tab. Saved model defaults still apply only when creating a session.
+
+**Agy requires `tmux` for embedded tabs.** Agentos uses a private socket and configuration, separate from your personal tmux server, to keep each Agy terminal alive after tab or application exit. Resuming from the agentos TUI reconnects to the same running terminal. Agentos does not install tmux or register Agy’s remote-control daemon. Stop work using the provider’s own controls before detaching when you want it to stop. These background processes survive UI exit, not machine shutdown.
+
+Direct CLI commands such as `agentos sessions new` and `sessions resume` retain their ordinary native terminal handoff. External editors still temporarily suspend the agentos display. No inference is needed to render the embedded terminal itself.
+
+Embedded terminals use agentos’s navy background, pale blue accents, and semantic ANSI colors. Run `bun run theme:providers` once to select matching native themes: a custom Codex syntax theme, OpenCode’s `system` theme in dark mode, and Agy’s `terminal` color scheme. This updates only theme settings in the native user configuration files (so those selections also affect standalone provider launches), preserves unrelated settings and permissions, and respects `CODEX_HOME` and `XDG_CONFIG_HOME`. Restart provider frontends to pick up theme changes; an existing Agy terminal retained by tmux keeps its current appearance until restarted. Codex’s native syntax theme covers code and diffs; its other UI colors follow terminal capabilities.
+
+Native theme references: [Codex](https://learn.chatgpt.com/docs/cli-customization), [OpenCode](https://dev.opencode.ai/v2/docs/cli/theme/), [Agy](https://www.agy.dev/docs/cli/reference/).
 
 ## Projects, roles, and sessions
 
 ```sh
 agentos providers list
-agentos projects create Wizyz ~/projects/wizyz --description "AI website builder"
+agentos projects create Wizyz --description "AI website builder"
 agentos agents create Developer --instructions-file ./developer-instructions.md
-agentos sessions new --project Wizyz --agent Developer --provider codex
+agentos sessions new --project Wizyz --cwd ~/projects/wizyz --agent Developer --provider codex
 agentos sessions list --project Wizyz
-agentos sessions resume <agent-os-session-id>
-agentos sessions history <agent-os-session-id> --cursor '<nextCursor>'
-agentos projects instructions Wizyz --edit
-agentos projects instructions Wizyz --file GEMINI.md
+agentos sessions resume <agentos-session-id>
+agentos sessions history <agentos-session-id> --cursor '<nextCursor>'
+agentos sessions instructions <session-id> --edit
+agentos sessions instructions <session-id> --file GEMINI.md
 ```
 
-Use `bun src/index.ts ...` without linking. Direct commands print JSON; native interactive operations require a real terminal. `--help` lists commands and flags. Projects and agents are optional; projectless sessions use the launch directory or `--cwd`.
+Use `bun src/index.ts ...` without linking. Direct commands print JSON; native interactive operations require a real terminal. `--help` lists commands and flags. Projects and agents are optional. Projects are organizational groups, with a name and description; they do not own directories or instruction files. Every session uses its own working directory: the TUI asks for one, and the CLI uses `--cwd`, the saved default directory, or the launch directory. Automations keep their independently configured `cwd`.
 
 Roles are central Markdown files with `name`/`description` YAML frontmatter. Their instructions become an explicitly labeled initial native user message. They never replace default system/developer prompts or project instruction files, and are not reinserted on resume. Editing a role affects future sessions. Import an existing definition using `agents import <file>`.
 
@@ -67,7 +99,51 @@ Provider behavior:
 
 Managed session status describes preparation/terminal attachment, not task completion. `idle` means the native TUI exited successfully; its native daemon may still be working. Conversations opened with native `/new` or `/fork` are not automatically imported. A process-identity guard prevents simultaneous managed attachment and recovers stale records after interruption.
 
-Project removal preserves workspace files. Instructions are edited only by an explicit action. Agent deletion preserves native conversations and existing session metadata.
+Project details show their sessions and automations. From a project, `/sessions` and `/automations` open filtered lists; use `/home` to return to global navigation. On a session or automation, `/project` assigns a group by name or ID; leave its field empty to clear membership. Grouping is SQLite metadata and is not part of automation YAML.
+
+```bash
+agentos sessions project <session-id> Wizyz
+agentos sessions project <session-id> --clear
+agentos automations project <name> Wizyz
+agentos automations project <name> --clear
+agentos sessions list --project Wizyz
+agentos automations list --project Wizyz
+```
+
+Project removal clears memberships and preserves sessions, automations, histories, and workspace files. Group reassignment never changes working directories. On upgrade, existing project IDs and session memberships are retained; previous project directory fields are removed, existing session/automation directories remain intact, and automations start ungrouped. Instructions are edited only by an explicit action on a session, using its directory (`/instructions`). Agent deletion preserves native conversations and existing session metadata.
+
+## Settings
+
+Open `/settings` for a centered settings modal. Enter opens the selected setting; `/edit` edits provider, directory, and per-provider model defaults. Storage paths are read-only. The background scheduler entry checks status; `/scheduler install` asks before installing and starting the systemd user service.
+
+The provider choice and default working directory persist in the private XDG configuration file. Leave the default directory empty to use the launch directory. Defaults apply to future sessions, including the native session wizard and CLI; explicit `--provider` and `--cwd` override them. Existing sessions and automation directories are unchanged. The home `/directory` command changes only the current launch context.
+
+```bash
+agentos settings show
+agentos settings provider opencode
+agentos settings directory ~/projects/wizyz
+agentos settings directory --clear
+```
+
+Each provider has its own **model defaults** entry. Enter opens a searchable model picker, followed by that model’s advertised reasoning effort (Codex), variant (OpenCode), or effort (Agy). The pair saves after the second selection; Escape cancels without saving. Choose **Use provider default** in the model picker to clear both overrides, or in the reasoning picker to leave reasoning to the provider. Changing the model resets the reasoning choice.
+
+Catalogs are discovered on demand from the installed provider: Codex App Server `model/list` (all pages), OpenCode `/api/model` (enabled models and variants), and `agy models` plus its CLI effort choices. Discovery failures and empty catalogs offer retry, and you can still clear overrides when discovery fails. OpenCode model IDs include the provider prefix, such as `openrouter/organization/model`; copy the exact ID from the catalog.
+
+```bash
+agentos providers models codex
+agentos providers models opencode
+agentos providers models agy
+agentos settings model codex <model-id-from-catalog>
+agentos settings reasoning codex <effort-from-catalog>
+agentos settings model opencode <provider-id/model-id-from-catalog>
+agentos settings reasoning opencode <variant-from-catalog>
+agentos settings model agy <model-id-from-catalog>
+agentos settings reasoning agy <effort-from-catalog>
+agentos settings reasoning codex --clear
+agentos settings model codex --clear
+```
+
+`settings show` includes `providerDefaults`, keyed by provider with optional `model` and `reasoning` values. These preferences apply only to **new interactive sessions** started from Home, the session wizard, or `sessions new`. Settings are validated against current capabilities before session creation; unavailable models or reasoning choices produce an error and preserve the Home draft. Resuming sessions and running automations retain their existing behavior. Agentos does not rewrite provider configuration or authentication. With no overrides, the provider selects its native defaults.
 
 ## Skills
 
@@ -83,7 +159,7 @@ agentos skills uninstall seo codex
 agentos skills remove seo --yes
 ```
 
-Managed directories live centrally under the Agent OS data directory. Codex and OpenCode share `~/.agents/skills`; installing/unlinking there affects both providers. Agy uses `~/.gemini/antigravity-cli/skills`. Managed installation records track exact symlink targets. Existing independently installed files/links are never adopted or replaced; external modifications become conflicts. Missing owned links can be repaired by installing again. Directory imports reject symlinks and special files. Providers decide which skills to load; Agent OS never injects their contents into sessions.
+Managed directories live centrally under the agentos data directory. Codex and OpenCode share `~/.agents/skills`; installing/unlinking there affects both providers. Agy uses `~/.gemini/antigravity-cli/skills`. Managed installation records track exact symlink targets. Existing independently installed files/links are never adopted or replaced; external modifications become conflicts. Missing owned links can be repaired by installing again. Directory imports reject symlinks and special files. Providers decide which skills to load; agentos never injects their contents into sessions.
 
 ## MCPs and credentials
 
@@ -125,9 +201,9 @@ Native entry names are prefixed `agentos-`. Global files:
 - OpenCode: `$XDG_CONFIG_HOME/opencode/opencode.json` or an existing `opencode.jsonc`. Having both is treated as a precedence conflict.
 - Agy: `~/.gemini/config/mcp_config.json`.
 
-JSONC edits preserve other entries/comments. TOML edits use bounded managed blocks and verify that unrelated configuration survives. Fingerprints protect external modifications during update/removal. Deletion removes only owned installations. Installations work when providers are launched outside Agent OS, subject to normal native configuration precedence.
+JSONC edits preserve other entries/comments. TOML edits use bounded managed blocks and verify that unrelated configuration survives. Fingerprints protect external modifications during update/removal. Deletion removes only owned installations. Installations work when providers are launched outside agentos, subject to normal native configuration precedence.
 
-Definitions accept references, not plaintext environment/header credential fields. Never embed credentials in command arguments or URLs. Configure a persistent shell/OS environment, native OAuth, or an MCP server credential helper independently of Agent OS. Codex env references retain the same variable names; OpenCode supports its documented native interpolation. **Agy environment and bearer interpolation are unverified and rejected**; use native OAuth or a server that obtains credentials through a persistent helper. No provider authentication is modified.
+Definitions accept references, not plaintext environment/header credential fields. Never embed credentials in command arguments or URLs. Configure a persistent shell/OS environment, native OAuth, or an MCP server credential helper independently of agentos. Codex env references retain the same variable names; OpenCode supports its documented native interpolation. **Agy environment and bearer interpolation are unverified and rejected**; use native OAuth or a server that obtains credentials through a persistent helper. No provider authentication is modified.
 
 ## Automations
 
@@ -205,20 +281,24 @@ agentos automations worker
 
 The systemd user service runs independently of the TUI and restarts on failure. It uses absolute Bun/source paths, private file creation, and explicit XDG paths. Keep the checkout installed. User services normally run while your user manager is active; enabling login lingering is an optional separate OS administration decision.
 
-Optional `~/.config/agent-os/worker.env` is a systemd EnvironmentFile for explicitly maintained service-only variables; keep it `0600`. It does not configure credentials for native providers launched from other shells. Native permission policies still apply to unattended execution.
+Optional `~/.config/agentos/worker.env` is a systemd EnvironmentFile for explicitly maintained service-only variables; keep it `0600`. It does not configure credentials for native providers launched from other shells. Native permission policies still apply to unattended execution.
 
 ## Persistence, validation, and development
 
-Data defaults to `~/.local/share/agent-os`: `agent-os.db`, `agents/`, `skills/`, and `automations/<slug>/automation.yaml`. Configuration/cache directories respect absolute XDG values. Application directories are private (`0700`); database and new instruction files use `0600`. SQLite uses WAL, foreign keys, transactions, migrations, and downgrade detection. Provider conversations remain in native storage.
+Existing installations continue using their legacy `agent-os/` directories and `agent-os.db` in place, preserving saved data, managed links, and native configuration ownership. `agentos paths` shows the locations in use. No data is moved automatically.
+
+Data defaults to `~/.local/share/agentos`: `agentos.db`, `agents/`, `skills/`, and `automations/<slug>/automation.yaml`. Configuration/cache directories respect absolute XDG values. Application directories are private (`0700`); database and new instruction files use `0600`. SQLite uses WAL, foreign keys, transactions, migrations, and downgrade detection. Provider conversations remain in native storage.
 
 Raw provider stdout/stderr and full conversation archives are not copied into run logs. Logs contain event types; known environment credential values and bearer strings are redacted from results/errors. Keep credentials out of authored prompts and definitions.
 
-Before upgrades, stop the scheduler, close Agent OS instances, and back up its data directory plus native provider storage. Do not copy only a live SQLite database without its WAL. Install pinned dependencies, restart the application to apply migrations, then restart the scheduler. Invalid edited files remain available for correction.
+Before upgrades, stop the scheduler, close agentos instances, and back up its data directory plus native provider storage. Do not copy only a live SQLite database without its WAL. Install pinned dependencies, restart the application to apply migrations, then restart the scheduler. Invalid edited files remain available for correction.
 
 ```sh
 bun run check                    # Strict TypeScript, Biome, tests
 bun run dev                      # Watch mode; use start for native sessions
-bun run drizzle-kit generate     # After intentional schema edits
+bun run db:generate              # After intentional schema edits
 ```
+
+Drizzle migration history is committed in `src/storage/migrations` and applied automatically when the database opens.
 
 Application services are independent of the TUI. Native execution and configuration formats live under `providers/`; storage/migrations, OS process handling, and scheduling remain separate. Tests isolate their databases/configs and mock provider processes; real provider validation is recorded in [implementation notes](docs/implementation.md).

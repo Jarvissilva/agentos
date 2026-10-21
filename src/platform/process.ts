@@ -8,7 +8,7 @@ export async function runInteractive(
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error("This operation requires an interactive terminal.");
   }
-  const stty = Bun.which("stty");
+  const stty = Bun.which("stty", { PATH: process.env.PATH });
   if (!stty)
     throw new Error(
       "stty (GNU coreutils) is required for terminal restoration",
@@ -75,15 +75,20 @@ export async function runInteractive(
   return result;
 }
 
-export async function probe(command: string, args: string[]): Promise<string> {
+export async function probe(
+  command: string,
+  args: string[],
+  options: { includeStderr?: boolean; timeoutMs?: number } = {},
+): Promise<string> {
   const child = Bun.spawn([command, ...args], {
+    env: process.env,
     stdout: "pipe",
     stderr: "pipe",
-    timeout: 5000,
+    timeout: options.timeoutMs ?? 5000,
     killSignal: "SIGKILL",
     maxBuffer: 1024 * 1024,
   });
-  const [output, , code] = await Promise.all([
+  const [output, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
     child.exited,
@@ -92,5 +97,5 @@ export async function probe(command: string, args: string[]): Promise<string> {
     throw new Error(
       `${command} probe exited ${code}; run ${command} --version directly for diagnostics.`,
     );
-  return output.trim();
+  return (options.includeStderr ? `${output}\n${stderr}` : output).trim();
 }

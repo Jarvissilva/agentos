@@ -44,7 +44,7 @@ test("shared native skill links are owned, repairable, and never replace user sk
   expect(f.skills.links(skill.id)).toHaveLength(1);
   expect(f.skills.links(skill.id)[0]?.status).toBe("linked");
   const path = join(f.root, ".agents/skills/seo");
-  expect(readlinkSync(path)).toContain("agent-os/skills/seo");
+  expect(readlinkSync(path)).toContain("agentos/skills/seo");
   unlinkSync(path);
   f.skills.install(skill.id, "codex");
   unlinkSync(path);
@@ -116,7 +116,11 @@ test("TOML MCP edits preserve unrelated tables and refuse externally changed ent
   );
   expect(f.mcps.installations(m.id)[0]?.status).toBe("conflict");
   expect(() => f.mcps.remove(m.id)).toThrow("modified");
-  writeFileSync(file, original);
+  // Ownership survives application renaming: older managed TOML boundaries remain editable.
+  writeFileSync(file, original.replaceAll("# agentos ", "# Agent OS "));
+  f.mcps.install(m.id, "codex");
+  expect(readFileSync(file, "utf8")).toContain("# agentos begin");
+  expect(readFileSync(file, "utf8")).not.toContain("# Agent OS begin");
   f.mcps.uninstall(m.id, "codex");
   expect(readFileSync(file, "utf8")).toContain("[mcp_servers.independent]");
 });

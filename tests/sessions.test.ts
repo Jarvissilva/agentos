@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { ProviderManager } from "../src/providers/manager";
-import type { ProviderConnection } from "../src/providers/types";
+import type {
+  ProviderConnection,
+  SessionOptions,
+} from "../src/providers/types";
 import { sessions } from "../src/storage/schema";
 import { fixture } from "./helpers";
 
 class FakeProviders extends ProviderManager {
   calls: { id: string; cwd: string; prompt?: string }[] = [];
+  createOptions: (SessionOptions | undefined)[] = [];
+  launchOptions: (SessionOptions | undefined)[] = [];
   closed = 0;
   exitCode = 0;
   failResume = false;
@@ -26,13 +31,15 @@ class FakeProviders extends ProviderManager {
       },
       async connect(): Promise<ProviderConnection> {
         return {
-          async create() {
+          async create(_cwd, options) {
+            manager.createOptions.push(options);
             return { threadId: "native-thread", sessionId: "native-session" };
           },
           async resume() {
             if (manager.failResume) throw new Error("Native history missing");
           },
-          async launch(id, cwd, prompt) {
+          async launch(id, cwd, prompt, options) {
+            manager.launchOptions.push(options);
             manager.calls.push({ id, cwd, prompt });
             return manager.exitCode;
           },
@@ -78,10 +85,10 @@ afterEach(() => {
 });
 
 test("new session saves native identity before handoff and resume keeps identity without reinjecting role", async () => {
-  const p = f.app.createProject("Project", f.root);
+  const p = f.app.createProject("Project");
   const a = f.app.createAgent("Developer", "Follow repository instructions.");
   const session = await f.app.newSession(
-    { project: p.id, agent: a.id, prompt: "Review the code" },
+    { project: p.id, cwd: f.root, agent: a.id, prompt: "Review the code" },
     async (run) => {
       const pending = f.app.listSessions()[0];
       expect(pending?.nativeThreadId).toBe("native-thread");
@@ -153,4 +160,102 @@ test("live owners cannot be resumed concurrently; stale process identities recov
   expect(f.app.session(id).status).toBe("interrupted");
   await f.app.resumeSession(id);
   expect(f.app.session(id).status).toBe("idle");
+});
+
+test("group membership is independent of session directories and native identity", async () => {
+  const first = f.app.createProject("First");
+  const second = f.app.createProject("Second");
+  const one = await f.app.newSession({ project: first.id, cwd: f.root });
+  const two = await f.app.newSession({ project: first.id });
+  expect(two.cwd).toBe(process.cwd());
+  expect(one.cwd).toBe(f.root);
+  f.app.assignSessionProject(one.id, second.name);
+  expect(f.app.session(one.id).projectId).toBe(second.id);
+  expect(f.app.session(one.id).nativeSessionId).toBe(one.nativeSessionId);
+  expect(f.app.session(one.id).cwd).toBe(f.root);
+  expect(() => f.app.assignSessionProject(one.id, "missing")).toThrow();
+  f.app.assignSessionProject(one.id);
+  expect(f.app.session(one.id).projectId).toBeNull();
+  f.app.removeProject(first.id);
+  expect(f.app.session(two.id).projectId).toBeNull();
+  await f.app.resumeSession(one.id);
+  expect(providers.calls.at(-1)?.cwd).toBe(f.root);
+});
+
+test("instruction editing uses the session directory", async () => {
+  const session = await f.app.newSession({ cwd: f.root });
+  expect(f.app.readInstructions(session.id)).toBe("");
+  f.app.saveInstructions(session.id, "Follow these repository rules.");
+  expect(f.app.readInstructions(session.id)).toBe(
+    "Follow these repository rules.",
+  );
+  expect(f.app.instructionFile(session.id)).toBe(`${f.root}/AGENTS.md`);
+  expect(() => f.app.instructionFile(session.id, "../AGENTS.md")).toThrow();
+});
+
+test("saved working directory defaults apply to future sessions and explicit directories override them", async () => {
+  f.app.setDefaultDirectory(f.paths.data);
+  const session = await f.app.newSession({});
+  expect(session.cwd).toBe(f.paths.data);
+  const explicit = await f.app.newSession({ cwd: f.root });
+  expect(explicit.cwd).toBe(f.root);
+  f.app.setDefaultDirectory();
+  expect(f.app.defaultDirectory()).toBeUndefined();
+  expect(f.app.session(session.id).cwd).toBe(f.paths.data);
+  expect(f.app.session(explicit.id).cwd).toBe(f.root);
+});
+
+test("new session validates and passes the same defaults to creation and handoff; resume ignores changed defaults", async () => {
+  f.app.modelCatalog = async () => ({
+    reasoningLabel: "effort",
+    models: [{ id: "test-model", name: "Test", reasoning: [{ id: "high" }] }],
+  });
+  await f.app.setProviderDefaults("codex", {
+    model: "test-model",
+    reasoning: "high",
+  });
+  const session = await f.app.newSession({ cwd: f.root });
+  expect(providers.createOptions[0]).toEqual({
+    model: "test-model",
+    reasoning: "high",
+  });
+  expect(providers.launchOptions[0]).toBe(providers.createOptions[0]);
+  f.app.modelCatalog = async () => {
+    throw new Error("Discovery failed");
+  };
+  await f.app.resumeSession(session.id);
+  expect(providers.launchOptions[1]).toBeUndefined();
+  await expect(f.app.newSession({ cwd: f.root })).rejects.toThrow(
+    "Discovery failed",
+  );
+  expect(f.app.listSessions()).toHaveLength(1);
+  expect(providers.createOptions).toHaveLength(1);
+  f.app.modelCatalog = async () => ({ reasoningLabel: "effort", models: [] });
+  await expect(f.app.newSession({ cwd: f.root })).rejects.toThrow(
+    "unavailable",
+  );
+  await f.app.setProviderDefaults("codex", {});
+  f.app.modelCatalog = async () => {
+    throw new Error("Must not discover without overrides");
+  };
+  await f.app.newSession({ cwd: f.root });
+  expect(providers.createOptions[1]).toEqual({});
+});
+
+test("embedded launch preflight fails before initialization or claiming a resume", async () => {
+  const launcher = Object.assign(async () => 0, {
+    preflight: () => {
+      throw new Error("Missing terminal capability");
+    },
+  });
+  await expect(
+    f.app.newSession({ cwd: f.root }, (run) => run(), launcher),
+  ).rejects.toThrow("Missing terminal capability");
+  expect(f.app.listSessions()).toHaveLength(0);
+  expect(providers.createOptions).toHaveLength(0);
+  const session = await f.app.newSession({ cwd: f.root });
+  await expect(
+    f.app.resumeSession(session.id, (run) => run(), launcher),
+  ).rejects.toThrow("Missing terminal capability");
+  expect(f.app.session(session.id).status).toBe("idle");
 });

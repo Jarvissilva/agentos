@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "agent-os",
+      "name": "agentos",
       "dependencies": {
         "@iarna/toml": "2.2.5",
         "@opentui/core": "0.6.6",

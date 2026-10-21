@@ -79,6 +79,16 @@ export class AutomationService {
     if (!a) throw new Error("Automation not found");
     return a;
   }
+  assignProject(id: string, project?: string) {
+    const automation = this.get(id);
+    const projectId = project ? this.app.project(project).id : null;
+    return this.db
+      .update(automations)
+      .set({ projectId })
+      .where(eq(automations.id, automation.id))
+      .returning()
+      .get();
+  }
   definition(id: string) {
     const a = this.get(id);
     return validateAutomation(parse(readFileSync(a.file, "utf8")), a.file);
@@ -496,7 +506,7 @@ export class AutomationService {
               step.agent && step.session === "new"
                 ? this.app.agentDefinition(step.agent).instructions
                 : "";
-            const prompt = `${instructions ? `Agent OS role instructions:\n${instructions}\n\n` : ""}${step.prompt}\n\nSupporting files directory: ${support}${step.includePrevious ? `\n\nPrevious step result (excerpt):\n${previousText.slice(-12000)}` : ""}`;
+            const prompt = `${instructions ? `agentos role instructions:\n${instructions}\n\n` : ""}${step.prompt}\n\nSupporting files directory: ${support}${step.includePrevious ? `\n\nPrevious step result (excerpt):\n${previousText.slice(-12000)}` : ""}`;
             const result = await adapter.execute({
               cwd: d.cwd,
               prompt,

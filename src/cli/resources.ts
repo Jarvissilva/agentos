@@ -32,9 +32,9 @@ export function resourceCommands(program: Command, app: Application) {
       app.removeAgent(id);
       output({ removed: id });
     });
-  const projects = program.commands.find((c) => c.name() === "projects");
-  projects
-    ?.command("instructions <project>")
+  const sessions = program.commands.find((c) => c.name() === "sessions");
+  sessions
+    ?.command("instructions <id>")
     .option("--file <name>", "Instruction filename", "AGENTS.md")
     .option("--edit")
     .action(async (id, options) => {
@@ -43,7 +43,7 @@ export function resourceCommands(program: Command, app: Application) {
         app.saveInstructions(id, content, options.file);
         await editFile(
           app.instructionFile(id, options.file),
-          app.project(id).cwd,
+          app.session(id).cwd,
         );
       } else console.log(app.readInstructions(id, options.file));
     });
@@ -130,7 +130,39 @@ export function resourceCommands(program: Command, app: Application) {
   const automations = program
     .command("automations")
     .description("Manual and persistent scheduled native provider workflows");
-  automations.command("list").action(() => output(app.automations.list()));
+  automations
+    .command("list")
+    .option("--project <name-or-id>")
+    .action((options) => {
+      const projectId = options.project
+        ? app.project(options.project).id
+        : undefined;
+      output(
+        app.automations
+          .list()
+          .filter((a) => !projectId || a.projectId === projectId),
+      );
+    });
+  for (const [command, assign] of [
+    [
+      sessions,
+      (id: string, project?: string) => app.assignSessionProject(id, project),
+    ],
+    [
+      automations,
+      (id: string, project?: string) =>
+        app.automations.assignProject(id, project),
+    ],
+  ] as const) {
+    command
+      ?.command("project <id> [project]")
+      .option("--clear", "Remove project membership")
+      .action((id, project, options) => {
+        if (Boolean(project) === Boolean(options.clear))
+          throw new Error("Supply a project or --clear, exclusively");
+        output(assign(id, project));
+      });
+  }
   automations
     .command("import <file>")
     .action((file) => output(app.automations.import(file)));

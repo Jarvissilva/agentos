@@ -211,7 +211,7 @@ export class SkillService {
       .where(eq(skillLinks.path, path))
       .get();
     if (!owned || owned.skillId !== s.id)
-      throw new Error("This link is not managed by Agent OS");
+      throw new Error("This link is not managed by agentos");
     const state = this.linkState(path, owned.target);
     if (state === "conflict")
       throw new Error("Native link changed externally; nothing removed");

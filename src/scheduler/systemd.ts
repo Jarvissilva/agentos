@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { atomicWrite } from "../platform/files";
 import type { AppPaths } from "../platform/paths";
 
-const marker = "# Managed by Agent OS";
+const marker = "# Managed by agentos";
 function quote(s: string) {
   if (/[\r\n\0]/.test(s)) throw new Error("Invalid service path");
   return `"${s.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%").replaceAll("$", "$$")}"`;
@@ -25,7 +25,7 @@ export function unitContents(paths: AppPaths) {
       })
       .join("\n") +
     `\nEnvironment=${quote(`PATH=${join(homedir(), ".local/bin")}:${join(homedir(), ".bun/bin")}:${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`)}`;
-  return `${marker}\n[Unit]\nDescription=Agent OS persistent local scheduler\n\n[Service]\nType=simple\nExecStart=${quote(process.execPath)} ${quote(file)} automations worker\n${environment}\nEnvironmentFile=-${join(paths.config, "worker.env").replaceAll("%", "%%").replaceAll(" ", "\\x20")}\nUMask=0077\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=15\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n`;
+  return `${marker}\n[Unit]\nDescription=agentos persistent local scheduler\n\n[Service]\nType=simple\nExecStart=${quote(process.execPath)} ${quote(file)} automations worker\n${environment}\nEnvironmentFile=-${join(paths.config, "worker.env").replaceAll("%", "%%").replaceAll(" ", "\\x20")}\nUMask=0077\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=15\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n`;
 }
 async function systemctl(args: string[]) {
   const p = Bun.spawn(["systemctl", "--user", ...args], {
@@ -48,7 +48,11 @@ async function systemctl(args: string[]) {
 export async function installWorker(paths: AppPaths, start = false) {
   const file = join(paths.config, "../systemd/user/agentos.service");
   const original = existsSync(file) ? readFileSync(file, "utf8") : "";
-  if (original && !original.startsWith(marker))
+  if (
+    original &&
+    !original.startsWith(marker) &&
+    !original.startsWith("# Managed by Agent OS")
+  )
     throw new Error("An unmanaged agentos.service already exists");
   atomicWrite(file, unitContents(paths), original);
   await systemctl(["daemon-reload"]);

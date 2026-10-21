@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import {
   existsSync,
+  mkdirSync,
   readFileSync,
   statSync,
   symlinkSync,
@@ -29,13 +30,13 @@ test("respects absolute XDG directories and ignores relative XDG values", () => 
     XDG_DATA_HOME: "relative",
     XDG_CONFIG_HOME: "/tmp/config",
   });
-  expect(paths.data).toBe("/tmp/example/.local/share/agent-os");
-  expect(paths.config).toBe("/tmp/config/agent-os");
+  expect(paths.data).toBe("/tmp/example/.local/share/agentos");
+  expect(paths.config).toBe("/tmp/config/agentos");
 });
 
 test("migrations are repeatable, data persists, and database permissions are private", () => {
   const f = setup();
-  f.app.createProject("Example", f.root);
+  f.app.createProject("Example");
   const second = openDatabase(f.paths);
   try {
     expect(second.db.$client.query("SELECT name FROM projects").get()).toEqual({
@@ -48,20 +49,19 @@ test("migrations are repeatable, data persists, and database permissions are pri
   }
 });
 
-test("project paths are canonical, edits validate, removal preserves files", () => {
+test("projects are directory-free groups, edits validate, and removal preserves files", () => {
   const f = setup();
-  const alias = join(f.root, "alias");
-  symlinkSync(f.paths.data, alias);
-  const p = f.app.createProject("Project", alias);
-  expect(p.cwd).toBe(f.paths.data);
-  expect(() => f.app.createProject("Duplicate", f.paths.data)).toThrow();
-  expect(() =>
-    f.app.updateProject(p.id, { cwd: "/missing-agentos-directory" }),
-  ).toThrow();
-  f.app.updateProject(p.id, { name: "Renamed" });
+  const p = f.app.createProject("Project", "A business group");
+  expect(p).not.toHaveProperty("cwd");
+  expect(p.description).toBe("A business group");
+  expect(() => f.app.createProject("Project")).toThrow();
+  expect(() => f.app.updateProject(p.id, { name: "" })).toThrow();
+  f.app.updateProject(p.id, { name: "Renamed", description: "Updated" });
+  expect(f.app.project(p.id).description).toBe("Updated");
+  f.app.createProject("Another group");
   f.app.removeProject(p.id);
   expect(existsSync(f.paths.data)).toBe(true);
-  expect(f.app.listProjects()).toHaveLength(0);
+  expect(f.app.listProjects()).toHaveLength(1);
 });
 
 test("an older application refuses a database migrated by a newer version", () => {
@@ -69,7 +69,7 @@ test("an older application refuses a database migrated by a newer version", () =
   f.storage.db.$client
     .query("INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)")
     .run("future", Date.now() + 1_000_000_000);
-  expect(() => openDatabase(f.paths)).toThrow("newer Agent OS version");
+  expect(() => openDatabase(f.paths)).toThrow("newer agentos version");
 });
 
 test("Markdown agents preserve instructions, reflect file edits, and clean up failed creates", () => {
@@ -96,5 +96,29 @@ test("invalid agent definitions and unsafe names fail explicitly", () => {
   expect(() => parseAgent("No frontmatter")).toThrow();
   expect(() => parseAgent("---\nname: Example\n---\n   ")).toThrow();
   const f = setup();
-  expect(() => f.app.createProject("bad\u001bname", f.root)).toThrow();
+  expect(() => f.app.createProject("bad\u001bname")).toThrow();
+});
+
+test("agentos reuses legacy storage locations without moving databases or references", () => {
+  const f = setup();
+  const dataRoot = join(f.root, "legacy-data");
+  const configRoot = join(f.root, "legacy-config");
+  const cacheRoot = join(f.root, "legacy-cache");
+  for (const root of [dataRoot, configRoot, cacheRoot])
+    mkdirSync(join(root, "agent-os"), { recursive: true });
+  const database = join(dataRoot, "agent-os", "agent-os.db");
+  writeFileSync(database, "existing database");
+  const paths = appPaths({
+    HOME: f.root,
+    XDG_DATA_HOME: dataRoot,
+    XDG_CONFIG_HOME: configRoot,
+    XDG_CACHE_HOME: cacheRoot,
+  });
+  expect(paths.data).toBe(join(dataRoot, "agent-os"));
+  expect(paths.config).toBe(join(configRoot, "agent-os"));
+  expect(paths.cache).toBe(join(cacheRoot, "agent-os"));
+  expect(paths.database).toBe(database);
+  expect(paths.agents).toBe(join(dataRoot, "agent-os", "agents"));
+  expect(readFileSync(database, "utf8")).toBe("existing database");
+  expect(existsSync(join(dataRoot, "agentos"))).toBe(false);
 });

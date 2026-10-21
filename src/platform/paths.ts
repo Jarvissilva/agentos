@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
@@ -17,12 +17,23 @@ export function appPaths(env: NodeJS.ProcessEnv = process.env): AppPaths {
     const value = env[key];
     return value && isAbsolute(value) ? value : join(home, fallback);
   };
-  const data = join(xdg("XDG_DATA_HOME", ".local/share"), "agent-os");
+  // Reuse legacy locations in place: owned links and definition references are absolute.
+  const location = (root: string) => {
+    const canonical = join(root, "agentos");
+    const legacy = join(root, "agent-os");
+    return !existsSync(canonical) && existsSync(legacy) ? legacy : canonical;
+  };
+  const data = location(xdg("XDG_DATA_HOME", ".local/share"));
+  const database = join(data, "agentos.db");
+  const legacyDatabase = join(data, "agent-os.db");
   return {
     data,
-    config: join(xdg("XDG_CONFIG_HOME", ".config"), "agent-os"),
-    cache: join(xdg("XDG_CACHE_HOME", ".cache"), "agent-os"),
-    database: join(data, "agent-os.db"),
+    config: location(xdg("XDG_CONFIG_HOME", ".config")),
+    cache: location(xdg("XDG_CACHE_HOME", ".cache")),
+    database:
+      !existsSync(database) && existsSync(legacyDatabase)
+        ? legacyDatabase
+        : database,
     agents: join(data, "agents"),
   };
 }

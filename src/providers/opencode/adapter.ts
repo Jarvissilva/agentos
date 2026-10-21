@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { probe, runInteractive } from "../../platform/process";
 import { captureJson, executeNative } from "../execution";
+import { openCodeModels } from "../models";
 import type {
   ExecutionInput,
   ProviderAdapter,
@@ -9,7 +10,16 @@ import type {
 } from "../types";
 
 const response = z.object({
-  data: z.object({ id: z.string().startsWith("ses") }),
+  data: z.object({
+    id: z.string().startsWith("ses"),
+    model: z
+      .object({
+        id: z.string(),
+        providerID: z.string(),
+        variant: z.string().optional(),
+      })
+      .optional(),
+  }),
 });
 export class OpenCodeAdapter implements ProviderAdapter {
   readonly id = "opencode";
@@ -34,6 +44,15 @@ export class OpenCodeAdapter implements ProviderAdapter {
       reason: supported ? null : "This adapter requires OpenCode v2",
     };
   }
+  async models(cwd?: string) {
+    return openCodeModels(
+      await captureJson(
+        "opencode",
+        ["api", "--standalone", "GET", "/api/model"],
+        cwd,
+      ),
+    );
+  }
   async connect(cwd?: string): Promise<ProviderConnection> {
     const api = (method: string, path: string, data?: unknown) =>
       captureJson(
@@ -48,13 +67,22 @@ export class OpenCodeAdapter implements ProviderAdapter {
         cwd,
       );
     return {
-      async create(directory) {
+      async create(directory, options) {
         const r = response.parse(
           await api("POST", "/api/session", {
             location: { directory },
-            title: "Agent OS",
+            title: "agentos",
+            ...(options?.nativeModel ? { model: options.nativeModel } : {}),
           }),
         );
+        const expected = options?.nativeModel;
+        if (
+          expected &&
+          (r.data.model?.id !== expected.id ||
+            r.data.model.providerID !== expected.providerID ||
+            (expected.variant && r.data.model.variant !== expected.variant))
+        )
+          throw new Error("OpenCode rejected the configured model or variant");
         return { threadId: r.data.id, sessionId: r.data.id };
       },
       async resume(id) {
@@ -62,8 +90,8 @@ export class OpenCodeAdapter implements ProviderAdapter {
           await api("GET", `/api/session/${encodeURIComponent(id)}`),
         );
       },
-      launch: (id, directory, prompt) =>
-        runInteractive(
+      launch: (id, directory, prompt, _options, runner = runInteractive) =>
+        runner(
           "opencode",
           [
             "--session",

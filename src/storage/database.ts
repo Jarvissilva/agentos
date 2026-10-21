@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { chmodSync } from "node:fs";
+import { chmodSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
@@ -8,7 +8,15 @@ import type { AppPaths } from "../platform/paths";
 import { initializePaths } from "../platform/paths";
 import * as schema from "./schema";
 
+const migrationsFolder = fileURLToPath(
+  new URL("./migrations", import.meta.url),
+);
+
 export function openDatabase(paths: AppPaths) {
+  if (!existsSync(migrationsFolder))
+    throw new Error(
+      `Database migrations are missing at ${migrationsFolder}. Reinstall agentos.`,
+    );
   initializePaths(paths);
   const previous = process.umask(0o077);
   try {
@@ -18,11 +26,7 @@ export function openDatabase(paths: AppPaths) {
       sqlite.exec(
         "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;",
       );
-      const migrationConfig = {
-        migrationsFolder: fileURLToPath(
-          new URL("../../drizzle", import.meta.url),
-        ),
-      };
+      const migrationConfig = { migrationsFolder };
       if (
         sqlite
           .query(
@@ -40,7 +44,7 @@ export function openDatabase(paths: AppPaths) {
         );
         if (latest && latest.created_at > supported)
           throw new Error(
-            "This database belongs to a newer Agent OS version. Upgrade Agent OS before opening it.",
+            "This database belongs to a newer agentos version. Upgrade agentos before opening it.",
           );
       }
       const db = drizzle(sqlite, { schema });

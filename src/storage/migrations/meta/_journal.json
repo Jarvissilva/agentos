@@ -15,6 +15,13 @@
       "when": 1792569361407,
       "tag": "0001_redundant_eternals",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792575405565,
+      "tag": "0002_project_groups",
+      "breakpoints": true
     }
   ]
 }

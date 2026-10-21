@@ -31,7 +31,7 @@ export class CodexRpc {
               error: {
                 code: -32601,
                 message:
-                  "Agent OS metadata client does not handle control requests",
+                  "agentos metadata client does not handle control requests",
               },
             }),
           );
@@ -69,7 +69,7 @@ export class CodexRpc {
     const rpc = new CodexRpc(socket);
     try {
       await rpc.request("initialize", {
-        clientInfo: { name: "agent_os", title: "Agent OS", version: "0.1.0" },
+        clientInfo: { name: "agentos", title: "agentos", version: "0.1.0" },
       });
       socket.send(JSON.stringify({ method: "initialized" }));
       return rpc;

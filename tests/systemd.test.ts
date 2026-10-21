@@ -12,6 +12,6 @@ test("systemd unit uses absolute runtime paths, private umask, and explicit pers
   expect(unit).toContain("UMask=0077");
   expect(unit).not.toContain("dangerously");
   expect(unit).toContain(
-    "EnvironmentFile=-/tmp/user/.config/agent-os/worker.env",
+    "EnvironmentFile=-/tmp/user/.config/agentos/worker.env",
   );
 });
