@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { constants, tmpdir } from "node:os";
 import { join } from "node:path";
 import { atomicWrite } from "./files";
@@ -54,9 +54,11 @@ export function persistentTerminal(database: string, sessionId: string) {
     config,
     "set -g status off\nset -g prefix None\nunbind-key -a\nset -g remain-on-exit on\nset -g destroy-unattached off\nset -g exit-empty on\n",
   );
+  const name = `session-${createHash("sha256").update(sessionId).digest("hex").slice(0, 24)}`;
   return {
     prefix: ["-S", join(root, "tmux.sock"), "-f", config],
-    name: `session-${createHash("sha256").update(sessionId).digest("hex").slice(0, 24)}`,
+    name,
+    exitStatus: join(root, `${name}.exit`),
   };
 }
 
@@ -125,6 +127,7 @@ export class EmbeddedProcess {
           .code !== 0
       ) {
         if (this.closed) return;
+        rmSync(target.exitStatus, { force: true });
         await tmux([
           ...target.prefix,
           "new-session",
@@ -138,12 +141,20 @@ export class EmbeddedProcess {
           "-c",
           this.spec.cwd,
           "--",
+          "/bin/sh",
+          "-c",
+          // Keep argv separate from shell source. Recording the command's
+          // result also works when tmux never populates pane_dead_status.
+          'agentos_exit_file=$1; shift; "$@"; agentos_exit_code=$?; umask 077; printf \'%s\\n\' "$agentos_exit_code" > "$agentos_exit_file"; exit "$agentos_exit_code"',
+          "agentos-terminal",
+          target.exitStatus,
           ...command,
         ]);
       }
       if (this.closed) return;
       command = ["tmux", ...target.prefix, "attach-session", "-t", target.name];
       let checking = false;
+      let missingStatusSince: number | undefined;
       pollPersistent = () => {
         if (checking || this.closed || completingPersistent) return;
         checking = true;
@@ -166,14 +177,31 @@ export class EmbeddedProcess {
               const signalNumber = Object.entries(constants.signals).find(
                 ([name]) => name === `SIG${signal.replace(/^SIG/, "")}`,
               )?.[1];
-              const code = /^\d+$/.test(status)
+              let code = /^\d+$/.test(status)
                 ? Number(status)
                 : signal
                   ? 128 + (signalNumber ?? 2)
                   : undefined;
-              // The PTY can close before tmux has reaped its child. Keep polling
-              // until an exit status or signal is available.
-              if (code === undefined) return;
+              if (code === undefined) {
+                try {
+                  const recorded = readFileSync(
+                    target.exitStatus,
+                    "utf8",
+                  ).trim();
+                  if (/^\d+$/.test(recorded) && Number(recorded) <= 255)
+                    code = Number(recorded);
+                } catch (error) {
+                  if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+                    throw error;
+                }
+              }
+              // A closed PTY can precede child reaping. Allow that race, but
+              // never leave a dead terminal attached forever without a result.
+              if (code === undefined) {
+                missingStatusSince ??= Date.now();
+                if (Date.now() - missingStatusSince < 5000) return;
+                code = 1;
+              }
               // Killing the pane may finish the frontend before this await
               // resumes. Its exit must not replace the provider's result.
               completingPersistent = true;
@@ -183,6 +211,7 @@ export class EmbeddedProcess {
                 [...target.prefix, "kill-session", "-t", target.name],
                 true,
               );
+              rmSync(target.exitStatus, { force: true });
               this.settle(code);
             } else if (frontendExit !== undefined) this.settle(frontendExit);
           })
