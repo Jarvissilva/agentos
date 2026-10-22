@@ -1,4 +1,4 @@
-import { colors } from "./theme";
+import { colors } from ".";
 
 // Keep ANSI meanings (errors, success, warnings) while matching the host UI.
 export const providerPalette = [

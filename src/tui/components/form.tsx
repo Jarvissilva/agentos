@@ -1,8 +1,8 @@
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useRef, useState } from "react";
+import type { FormSpec } from "../lib/types";
 import { colors } from "../theme";
-import type { FormSpec } from "../types";
 export function Form({
   spec,
   cancel,

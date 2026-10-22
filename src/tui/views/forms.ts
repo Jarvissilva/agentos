@@ -1,5 +1,5 @@
 import { parse, stringify } from "yaml";
-import type { ResourceContext } from "../types";
+import type { ResourceContext } from "../lib/types";
 export function resourceForms({
   app,
   openForm,

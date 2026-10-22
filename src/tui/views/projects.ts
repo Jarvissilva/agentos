@@ -1,5 +1,6 @@
-import { colors, plural, prettyPath } from "../theme";
-import type { Command, ResourceContext, ResourceView, Row } from "../types";
+import type { Command, ResourceContext, ResourceView, Row } from "../lib/types";
+import { colors } from "../theme";
+import { plural, prettyPath } from "../utils/format";
 export function projectsView(context: ResourceContext): ResourceView {
   const {
     app,

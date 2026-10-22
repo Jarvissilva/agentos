@@ -1,4 +1,4 @@
-import { BRAND } from "../constants";
+import { BRAND } from "../lib/constants";
 import { colors } from "../theme";
 import { mixHex, useTicker } from "./motion";
 

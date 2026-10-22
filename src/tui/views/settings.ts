@@ -1,8 +1,8 @@
 import type { ProviderId } from "../../lib/providers/types";
 import { installWorker, workerStatus } from "../../lib/scheduler/systemd";
-import { BRAND } from "../constants";
-import { prettyPath } from "../theme";
-import type { Command, ResourceContext, ResourceView, Row } from "../types";
+import { BRAND } from "../lib/constants";
+import type { Command, ResourceContext, ResourceView, Row } from "../lib/types";
+import { prettyPath } from "../utils/format";
 export function settingsView(context: ResourceContext): ResourceView {
   const {
     app,

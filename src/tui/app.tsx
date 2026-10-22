@@ -15,13 +15,11 @@ import type {
   ProviderId,
   ProviderInfo,
 } from "../lib/providers/types";
-import { matchCommands, matches } from "./commands";
 import { Form, ModalSurface } from "./components";
 import { ResourceModal } from "./components/resource-modal";
 import { SessionTabs, type WorkspaceTabProps } from "./components/session-tabs";
-import { BRAND } from "./constants";
 import { useNewSession } from "./flows/new-session";
-import { colors, plural } from "./theme";
+import { BRAND } from "./lib/constants";
 import type {
   Command,
   Confirmation,
@@ -37,7 +35,10 @@ import type {
   RunFilter,
   SectionKey,
   View,
-} from "./types";
+} from "./lib/types";
+import { colors } from "./theme";
+import { plural } from "./utils/format";
+import { matchCommands, matches } from "./utils/search";
 import { agentsView } from "./views/agents";
 import { automationsView } from "./views/automations";
 import { Home, homeCommands, useHomeLaunch } from "./views/home";

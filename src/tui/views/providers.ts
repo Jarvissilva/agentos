@@ -1,5 +1,5 @@
+import type { Command, ResourceContext, ResourceView, Row } from "../lib/types";
 import { colors } from "../theme";
-import type { Command, ResourceContext, ResourceView, Row } from "../types";
 export function providersView(context: ResourceContext): ResourceView {
   const { providers } = context;
 

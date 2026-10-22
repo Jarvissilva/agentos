@@ -1,5 +1,5 @@
+import type { HintItem } from "../lib/types";
 import { colors } from "../theme";
-import type { HintItem } from "../types";
 export function Hints({ items }: { items: HintItem[] }) {
   return (
     <box width="100%" alignItems="center" justifyContent="center">

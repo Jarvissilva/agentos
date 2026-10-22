@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { runInteractive } from "../../lib/platform/process";
+import type { Command, ResourceContext, ResourceView, Row } from "../lib/types";
 import { colors } from "../theme";
-import type { Command, ResourceContext, ResourceView, Row } from "../types";
 export function skillsView(context: ResourceContext): ResourceView {
   const {
     app,

@@ -1,4 +1,4 @@
-export type { FormSpec, ListRowData, PaletteItem } from "../types";
+export type { FormSpec, ListRowData, PaletteItem } from "../lib/types";
 export * from "./branding";
 export * from "./command-input";
 export * from "./confirmation";

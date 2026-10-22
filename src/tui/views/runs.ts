@@ -1,5 +1,6 @@
-import { prettyPath, relativeTime, statusMark } from "../theme";
-import type { Command, ResourceContext, ResourceView, Row } from "../types";
+import type { Command, ResourceContext, ResourceView, Row } from "../lib/types";
+import { statusMark } from "../theme";
+import { prettyPath, relativeTime } from "../utils/format";
 import { automationLauncher } from "./automations";
 export function runsView(context: ResourceContext): ResourceView {
   const { app, runFilter, setNotice, refresh, fail } = context;

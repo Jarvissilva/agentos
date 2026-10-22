@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { Application, SessionLauncher, TerminalHandoff } from "../app";
-import type { ProviderId, ProviderInfo } from "../lib/providers/types";
+import type { Application, SessionLauncher, TerminalHandoff } from "../../app";
+import type { ProviderId, ProviderInfo } from "../../lib/providers/types";
 
 export interface PaletteItem {
   name: string;

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { EmbeddedTerminalRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
-import { providerThemeSequence } from "../src/tui/provider-theme";
+import { providerThemeSequence } from "../src/tui/theme/provider";
 
 test("embedded providers discover the host foreground, background and ANSI accent", async () => {
   const { renderer } = await createTestRenderer({ width: 30, height: 6 });

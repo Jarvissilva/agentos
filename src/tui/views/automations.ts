@@ -1,6 +1,7 @@
 import { stringify } from "yaml";
-import { colors, prettyPath } from "../theme";
-import type { Command, ResourceContext, ResourceView, Row } from "../types";
+import type { Command, ResourceContext, ResourceView, Row } from "../lib/types";
+import { colors } from "../theme";
+import { prettyPath } from "../utils/format";
 import { resourceForms } from "./forms";
 import { schedulerActions } from "./settings";
 export function automationsView(context: ResourceContext): ResourceView {

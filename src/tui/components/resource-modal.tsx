@@ -3,7 +3,6 @@ import type { ReactNode, RefObject } from "react";
 import { redact } from "../../lib/platform/files";
 import { errorMessage } from "../../lib/platform/paths";
 import type { ProviderInfo } from "../../lib/providers/types";
-import { clip, colors } from "../theme";
 import type {
   Command,
   Confirmation,
@@ -15,7 +14,9 @@ import type {
   Row,
   SectionKey,
   View,
-} from "../types";
+} from "../lib/types";
+import { colors } from "../theme";
+import { clip } from "../utils/format";
 import {
   ActionLine,
   CommandBox,

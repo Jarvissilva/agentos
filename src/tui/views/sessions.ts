@@ -1,6 +1,7 @@
 import { sessionLabel } from "../../modules/sessions/title";
-import { relativeTime, sessionMark } from "../theme";
-import type { Command, ResourceContext, ResourceView, Row } from "../types";
+import type { Command, ResourceContext, ResourceView, Row } from "../lib/types";
+import { sessionMark } from "../theme";
+import { relativeTime } from "../utils/format";
 import { resourceForms } from "./forms";
 export function sessionsView(context: ResourceContext): ResourceView {
   const {

@@ -10,8 +10,9 @@ import {
   Palette,
   Wordmark,
 } from "../components";
-import { colors, prettyPath } from "../theme";
-import type { Command, FormSpec, PaletteItem, Picker } from "../types";
+import type { Command, FormSpec, PaletteItem, Picker } from "../lib/types";
+import { colors } from "../theme";
+import { prettyPath } from "../utils/format";
 
 interface HomeProps {
   active: boolean;

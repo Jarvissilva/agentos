@@ -2,7 +2,6 @@ import type { KeyEvent } from "@opentui/core";
 import { useEffect, useState } from "react";
 import { type Application, directory } from "../../app";
 import type { ProviderInfo } from "../../lib/providers/types";
-import { matches } from "../commands";
 import {
   CommandBox,
   EmptyState,
@@ -11,8 +10,10 @@ import {
   ListRow,
   SectionHeader,
 } from "../components";
-import { clip, colors } from "../theme";
-import type { Wizard, WizardOption } from "../types";
+import type { Wizard, WizardOption } from "../lib/types";
+import { colors } from "../theme";
+import { clip } from "../utils/format";
+import { matches } from "../utils/search";
 
 const wizardSteps = ["project", "directory", "agent", "provider"] as const;
 interface NewSessionProps {

@@ -1,6 +1,7 @@
-import { BRAND } from "../constants";
-import { colors, relativeTime } from "../theme";
-import type { Command, ResourceContext, ResourceView, Row } from "../types";
+import { BRAND } from "../lib/constants";
+import type { Command, ResourceContext, ResourceView, Row } from "../lib/types";
+import { colors } from "../theme";
+import { relativeTime } from "../utils/format";
 export function notificationsView(context: ResourceContext): ResourceView {
   const { app, refresh } = context;
 

@@ -13,8 +13,9 @@ import {
 import { errorMessage } from "../../lib/platform/paths";
 import type { Session } from "../../lib/storage/schema";
 import { sessionLabel } from "../../modules/sessions/title";
-import { providerThemeSequence } from "../provider-theme";
-import { clip, colors } from "../theme";
+import { colors } from "../theme";
+import { providerThemeSequence } from "../theme/provider";
+import { clip } from "../utils/format";
 
 interface Invocation {
   session: Session;

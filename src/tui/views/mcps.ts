@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { parse, stringify } from "yaml";
+import type { Command, ResourceContext, ResourceView, Row } from "../lib/types";
 import { colors } from "../theme";
-import type { Command, ResourceContext, ResourceView, Row } from "../types";
 import { resourceForms } from "./forms";
 export function mcpsView(context: ResourceContext): ResourceView {
   const {

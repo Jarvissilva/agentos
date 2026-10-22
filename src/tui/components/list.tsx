@@ -1,6 +1,7 @@
-import { BRAND } from "../constants";
-import { clip, colors } from "../theme";
-import type { ListRowData } from "../types";
+import { BRAND } from "../lib/constants";
+import type { ListRowData } from "../lib/types";
+import { colors } from "../theme";
+import { clip } from "../utils/format";
 export function SectionHeader({
   title,
   detail,

@@ -1,5 +1,5 @@
+import type { PaletteItem } from "../lib/types";
 import { colors } from "../theme";
-import type { PaletteItem } from "../types";
 export function Palette({
   items,
   selected,
