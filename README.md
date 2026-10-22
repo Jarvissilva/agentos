@@ -2,7 +2,42 @@
 
 A local-first terminal application for projects, native AI providers, reusable roles, skills, MCP configuration, sessions, and scheduled automations. Bun + strict TypeScript + OpenTUI React + Commander + SQLite/Drizzle + Zod. No web service, inference loop, container, or external job infrastructure.
 
-## Run
+## Install on Linux
+
+The installer sets up AgentOS and installs Bun 1.4.3 through [Bun's official installer](https://bun.sh/docs/installation) when Bun is missing. An existing stable Bun >=1.3.14 is reused. Install `curl`, `tar`, `gzip`, GNU coreutils (`stty`), and util-linux (`setsid`) using your distribution's package manager first; installing Bun also requires `unzip`.
+
+**Publishing setup:** this checkout has no public repository URL configured yet. Replace both `OWNER/REPO` placeholders below with the public GitHub repository before distributing this command. Commit the installer and publish a GitHub release with a tag such as `v0.1.0`; the default installation resolves the latest published release, not the development branch.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | bash -s -- --repo OWNER/REPO
+```
+
+To choose a release, append `--version v0.1.0`. To inspect the installer before executing it, download `scripts/install.sh` and run `bash install.sh --repo OWNER/REPO`. Run without `sudo` as the user who will use AgentOS.
+
+The installer keeps the source and dependencies in `~/.local/lib/agentos` and creates `~/.local/bin/agentos`. It prints the absolute launch command and shell-specific PATH instructions if needed. It preserves the directory you launch from. Existing installation directories and command paths, including symlinks, are refused rather than replaced. Downloads and dependency installation finish in a temporary directory before the command is published; failed setup removes temporary AgentOS files. Bun installed by its official installer remains available even if AgentOS installation fails.
+
+Then run:
+
+```sh
+agentos
+```
+
+Install at least one supported native provider (Codex, OpenCode, or Agy) and sign in through its own CLI before starting provider sessions. The installer checks for providers but does not install them or manage their credentials. Agy also requires `tmux`. Scheduler setup remains optional and explicit; see [Persistent worker](#persistent-worker).
+
+### Upgrade or remove an installer installation
+
+This installer supports fresh installation only; it does not update a running application. Before replacing an installation, close AgentOS, stop the scheduler if used, and back up the AgentOS data directory and native provider storage as described under [Persistence, validation, and development](#persistence-validation-and-development).
+
+For an installation created by this installer, remove its launcher and application files:
+
+```sh
+rm -- "$HOME/.local/bin/agentos"
+rm -rf -- "$HOME/.local/lib/agentos"
+```
+
+For an upgrade, run the installer again with the desired release, start AgentOS to apply migrations, and reinstall/start the scheduler if previously used. If a new installation fails, reinstall the previous release before restarting; after database migrations, restoring the pre-upgrade backup may be necessary. For removal, stop after deleting the application files. These commands preserve settings, databases, memory, managed resources, caches, Bun, and native provider storage. Check `agentos paths` before removal if you also want to locate your data. Do not apply these removal instructions to a different installation layout.
+
+## Run from a source checkout
 
 ```sh
 bun install --frozen-lockfile
@@ -74,9 +109,7 @@ A dot on an inactive tab indicates new terminal output, not confirmed task compl
 
 Direct CLI commands such as `agentos sessions new` and `sessions resume` retain their ordinary native terminal handoff. External editors still temporarily suspend the agentos display. No inference is needed to render the embedded terminal itself.
 
-Embedded terminals use agentos’s navy background, pale blue accents, and semantic ANSI colors. Run `bun run theme:providers` once to select matching native themes: a custom Codex syntax theme, OpenCode’s `system` theme in dark mode, and Agy’s `terminal` color scheme. This updates only theme settings in the native user configuration files (so those selections also affect standalone provider launches), preserves unrelated settings and permissions, and respects `CODEX_HOME` and `XDG_CONFIG_HOME`. Restart provider frontends to pick up theme changes; an existing Agy terminal retained by tmux keeps its current appearance until restarted. Codex’s native syntax theme covers code and diffs; its other UI colors follow terminal capabilities.
-
-Native theme references: [Codex](https://learn.chatgpt.com/docs/cli-customization), [OpenCode](https://dev.opencode.ai/v2/docs/cli/theme/), [Agy](https://www.agy.dev/docs/cli/reference/).
+Embedded terminals use agentos’s navy background, pale blue accents, and semantic ANSI colors. Native provider themes remain controlled by each provider’s own settings.
 
 ## Projects, roles, and sessions
 

@@ -12,7 +12,6 @@
   },
   "scripts": {
     "start": "bun src/index.ts",
-    "theme:providers": "bun scripts/provider-themes.ts",
     "dev": "bun --watch src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
