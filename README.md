@@ -1,32 +1,111 @@
-# agentos
+<div align="center">
 
-A local-first terminal application for projects, native AI providers, reusable roles, skills, MCP configuration, sessions, and scheduled automations. Bun + strict TypeScript + OpenTUI React + Commander + SQLite/Drizzle + Zod. No web service, inference loop, container, or external job infrastructure.
+# ◇ AgentOS
+
+**Your local agent workspace.**
+
+Codex, OpenCode, and Agy — together in your terminal.
+
+[![CI](https://github.com/Jarvissilva/agentos/actions/workflows/ci.yml/badge.svg)](https://github.com/Jarvissilva/agentos/actions/workflows/ci.yml)
+[![Linux](https://img.shields.io/badge/platform-Linux-7f91a9)](#install-on-linux)
+[![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.4.3-b4cff1)](https://bun.sh)
+[![MIT License](https://img.shields.io/badge/license-MIT-93dcb5)](LICENSE)
+
+[Install](#install-on-linux) · [Highlights](#highlights) · [Get started](#your-first-session) · [Documentation](#documentation)
+
+<img src="docs/assets/agentos-home.png" alt="AgentOS Home screen with a blue globe, task input, provider selector, and command shortcuts" width="1000">
+
+</div>
+
+AgentOS is a local-first workspace for native AI coding tools. Organize your work, switch between sessions, and reuse your tools from one terminal. Each provider keeps its own interface, sign-in, and permissions.
+
+## Highlights
+
+| | What you can do |
+| --- | --- |
+| **◈ Native providers** | Work with Codex, OpenCode v2, and Agy through their own interfaces. |
+| **▤ Session tabs** | Keep several sessions open and resume earlier conversations. |
+| **◇ Projects** | Group sessions and automations without moving your workspace files. |
+| **✦ Agents & skills** | Reuse role instructions and manage skills discovered by native providers. |
+| **⌘ MCP servers** | Register servers once and explicitly install them for your providers. |
+| **◷ Automations** | Run sequential workflows on demand or on a schedule; inspect results and retry failures. |
 
 ## Install on Linux
 
-The installer sets up AgentOS and installs Bun 1.4.3 through [Bun's official installer](https://bun.sh/docs/installation) when Bun is missing. An existing stable Bun >=1.4.3 is reused. Install `curl`, `tar`, `gzip`, GNU coreutils (`stty`), and util-linux (`setsid`) using your distribution's package manager first; installing Bun also requires `unzip`.
-
-Install from [Jarvissilva/agentos](https://github.com/Jarvissilva/agentos). The installer resolves the latest published GitHub release, not the development branch; maintainers must publish a release before this command can install AgentOS.
+Install `curl`, `tar`, `gzip`, GNU coreutils (`stty`), and util-linux (`setsid`) with your package manager. The installer reuses stable Bun ≥1.4.3 or installs Bun 1.4.3 through its [official installer](https://bun.sh/docs/installation); installing Bun also requires `unzip`.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Jarvissilva/agentos/main/scripts/install.sh | bash
-```
-
-To choose a release, replace `bash` above with `bash -s -- --version v0.1.0`. To inspect the installer before executing it, download `scripts/install.sh` and run `bash install.sh`. The default repository is `Jarvissilva/agentos`; use `--repo OWNER/REPO` or `AGENTOS_REPOSITORY` to install a fork. Run without `sudo` as the user who will use AgentOS.
-
-The installer keeps the source and dependencies in `~/.local/lib/agentos` and creates `~/.local/bin/agentos`. It prints the absolute launch command and shell-specific PATH instructions if needed. It preserves the directory you launch from. Existing installation directories and command paths, including symlinks, are refused rather than replaced. Downloads and dependency installation finish in a temporary directory before the command is published; failed setup removes temporary AgentOS files. Bun installed by its official installer remains available even if AgentOS installation fails.
-
-Then run:
-
-```sh
 agentos
 ```
 
-Install at least one supported native provider (Codex, OpenCode, or Agy) and sign in through its own CLI before starting provider sessions. The installer checks for providers but does not install them or manage their credentials. Agy also requires `tmux`. Scheduler setup remains optional and explicit; see [Persistent worker](#persistent-worker).
+> The installer requires a **published stable GitHub release**. If none is available yet, use the source-checkout instructions below. Run without `sudo`.
 
-Basic Memory is optional and is not installed or configured by the installer. AgentOS works without it. To connect searchable memory through MCP, follow [Optional: Basic Memory setup](#optional-basic-memory-setup).
+Install and sign in to at least one provider using its own CLI: **Codex**, **OpenCode v2**, or **Agy**. Agy embedded sessions also require `tmux`.
 
-### Upgrade or remove an installer installation
+The installer creates `~/.local/bin/agentos`. If your shell cannot find it, add `~/.local/bin` to your PATH as instructed by the installer, or run that absolute path.
+
+## Run from a source checkout
+
+Requires Linux, [Bun ≥1.4.3](https://bun.sh/docs/installation), `stty`, and `setsid`.
+
+```sh
+git clone https://github.com/Jarvissilva/agentos.git
+cd agentos
+bun install --frozen-lockfile
+bun run start
+```
+
+Keep the checkout and its dependencies available at runtime. From source, use `bun src/index.ts` in place of `agentos` in the examples below.
+
+## Your first session
+
+1. Open AgentOS in your working directory.
+2. Use `/provider` to choose your signed-in provider and `/directory` to select a workspace.
+3. Type a task and press **Enter**. The provider’s own interface opens in a session tab.
+4. Use **F2** to return to the AgentOS dashboard, or `/sessions` there to resume earlier work.
+
+Use `/project` and `/agent` to organize a new session, and `/settings` to save provider, model, and reasoning defaults. Projects and agents are optional. [Basic Memory](#optional-basic-memory-setup) and the [background scheduler](#persistent-worker) are optional too.
+
+| Shortcut | Action |
+| --- | --- |
+| `/` in an empty input or **Ctrl+P** | Open the AgentOS command palette from the dashboard |
+| **Ctrl+T** | Open a new tab |
+| **Ctrl+1–9** / **Alt+1–9** | Switch tabs |
+| **F2** | Switch between the provider and its AgentOS dashboard |
+| **Ctrl+W** | Close a tab and detach its terminal |
+| **Esc** | Go back or close a dialog |
+| **Ctrl+Q** | Quit AgentOS |
+
+Closing a tab or quitting disconnects terminal frontends; background provider work can continue. Stop work through the provider’s own controls when needed. Native provider commands and approvals stay inside the provider interface.
+
+## Documentation
+
+Expand a guide when you need it. For CLI options, run `agentos --help` or add `--help` to a subcommand.
+
+<details>
+<summary><strong>Installation, updates & removal</strong></summary>
+
+## Upgrade or remove an installer installation
+
+To choose a published tag, pass it to the installer:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Jarvissilva/agentos/main/scripts/install.sh | bash -s -- --version v0.1.0
+```
+
+Replace `v0.1.0` with an existing release tag. To inspect the installer first, download it and run `bash install.sh`. Forks can use `--repo OWNER/REPO` or `AGENTOS_REPOSITORY`.
+
+The app and dependencies live in `~/.local/lib/agentos`; its launcher lives in `~/.local/bin`. Installation preserves the launch directory, refuses existing app/command paths, and stages downloads before publishing the command. Failed setup cleans up temporary AgentOS files; Bun installed during setup remains available.
+
+For a source checkout, an optional local command can point to it:
+
+```sh
+mkdir -p ~/.local/bin
+ln -s "$PWD/src/index.ts" ~/.local/bin/agentos
+```
+
+Keep the source checkout in place, update it through Git, and restart AgentOS after code changes.
 
 Installer-managed installations support a single update command:
 
@@ -37,7 +116,7 @@ agentos automations stop-service
 agentos update
 ```
 
-Publishing a stable GitHub release makes it available to `agentos update`; users run the command themselves. There is no background updater. The command preserves the repository selected during installation, including forks. It refuses updates while another AgentOS process or scheduler is running and never terminates native provider sessions. Stop any native work using the installation directory before updating, too.
+Updates are manual and use stable releases from the installation’s original repository. Close AgentOS and stop the scheduler and native work using the installation directory first; the updater refuses active installations.
 
 The updater downloads and validates the release, checks its Bun requirement, installs pinned dependencies, and tests startup with temporary storage before replacing application files. Settings, databases, memories, managed resources, and native provider storage stay in place. Locally modified application files and externally modified launchers are protected: save those changes elsewhere before reinstalling. An already-current installation is left unchanged; downgrades, drafts, and prereleases are not selected. Upgrade Bun separately if a release requires a newer version.
 
@@ -53,26 +132,14 @@ rm -rf -- "$HOME/.local/lib/agentos.installation"
 
 For a manual reinstall, run the installer again with the desired release. For removal, stop after deleting those files. These commands preserve settings, databases, memory, managed resources, caches, Bun, and native provider storage; they remove retained application backups. Check `agentos paths` before removal if you also want to locate your data. Do not apply these removal instructions to a different installation layout.
 
-## Run from a source checkout
+</details>
 
-```sh
-bun install --frozen-lockfile
-bun run start
-# Optional local CLI installation (keep this checkout available):
-mkdir -p ~/.local/bin
-ln -s "$PWD/src/index.ts" ~/.local/bin/agentos
-agentos
-```
-
-Requires Linux, Bun >=1.4.3, GNU coreutils (`stty`), and util-linux (`setsid`) for embedded provider terminals. Tested on Arch Linux with Bun 1.4.3, OpenTUI 0.6.6, Codex 0.163.0, OpenCode 2.0.29, and Agy 1.4.3. Log in and configure models with each provider's own CLI. Keep this source checkout and its dependencies available; this release runs from source and loads migrations relative to it.
-
-Restart an already-open agentos instance to load newly added modules.
+<details>
+<summary><strong>Command palette, navigation & Builder</strong></summary>
 
 ## Terminal interface
 
-agentos opens on a centered home screen with a message input. Type a task and press Enter to start a native provider session with that message. The first message also seeds a short session title (up to 60 characters), shown in Sessions and tab labels. Provider-native names remain authoritative and are synchronized with AgentOS; renames in AgentOS are written back to Codex and OpenCode. The selected provider, model and reasoning defaults, working directory, agent, and project appear beneath the input. Use `/provider` to choose an available provider; the last choice is remembered in `$XDG_CONFIG_HOME/agentos/preferences.json`. Without a saved choice, agentos prefers Codex when available, then the first available provider. An unavailable saved provider stays visible until you choose another.
-
-Use `/directory`, `/agent`, and `/project` on the home screen to configure the next session. Directory starts from the saved default, or where agentos was launched; agent and project default to none. The home context selections belong to each session tab and last for the current application instance. Use `/settings` to change persistent defaults. Resource lists, details, creation forms, and the session wizard open as centered modals over the home screen. Press `n` on Sessions, Projects, Agents, Skills, MCPs, or Automations to create an item. The shortcut is inactive in text inputs, selectors, and confirmation dialogs (`n` still cancels a confirmation). Every screen, resource, and action is reachable through the `/` command palette — there are no sidebar tabs or page-specific shortcuts to memorize. Press `/` in an empty home input, or Ctrl+P while drafting, to open the palette, type to filter commands by name or description, and press Enter to run the highlighted command. Commands prioritize exact names and name prefixes; otherwise actions for the item currently selected appear first. Closing commands, switching providers, or a launch error preserves your message. Slashes inside a message (such as paths) remain ordinary text. Empty messages do not launch sessions.
+Press `/` in an empty Home input or on a resource screen to open the palette. **Ctrl+P** opens it while preserving a draft. Type to filter, then press Enter. Closing commands or a failed launch preserves the Home message.
 
 | Key | Action |
 | --- | --- |
@@ -101,7 +168,7 @@ Commands include:
 | Navigate | `/settings`, `/sessions`, `/projects`, `/automations`, `/agents`, `/skills`, `/mcps`, `/providers`, `/runs`, `/notifications` |
 | System | `/builder`, `/provider`, `/back`, `/home`, `/help`, `/refresh`, `/scheduler install`, `/scheduler status`, `/quit` |
 
-`/help` lists every command available on the current screen, including context actions for the selected row. `/new session` runs a four-step wizard: choose a project group (or none), enter the working directory, choose an agent (or none), then choose a provider. Destructive commands ask for `y`/`n` confirmation. Opening a notification marks it read. There is no replacement provider chat UI.
+`/help` lists every command available on the current screen, including context actions for the selected row. `/new session` runs a four-step wizard: choose a project group (or none), enter the working directory, choose an agent (or none), then choose a provider. Destructive commands ask for `y`/`n` confirmation. Opening a notification marks it read. Providers keep their own interfaces, authentication, and approval screens.
 
 Use `/builder` from the AgentOS command palette on Home or any resource screen to start a fresh normal session in this source checkout, even when AgentOS was launched from another directory. It opens the selected provider's native interface with its saved model settings and no initial task, agent role, or project. Home drafts and directory selections are preserved. An unavailable selected provider reports an error; choose another with `/provider`. The checkout must remain available. To continue earlier Builder work, open `/sessions` and press Enter or use `/resume` on its saved session; resume uses the stored provider and directory. `/builder` always creates a new session. There is no separate `agentos builder` shell command.
 
@@ -109,9 +176,14 @@ The checkout includes repository-local [agent-builder](.agents/skills/agent-buil
 
 Native providers retain their own shortcuts and trust/approval screens, except for the agentos tab shortcuts listed below. Terminal settings are saved/restored even after an abnormal provider/editor exit. `VISUAL`/`EDITOR` can name an executable or path; shell argument strings are deliberately not evaluated. Default editor: `vi`.
 
+</details>
+
+<details>
+<summary><strong>Session tabs & background behavior</strong></summary>
+
 ## Embedded session tabs
 
-Interactive sessions launched in the agentos TUI now open the provider’s own interface inside an embedded terminal, beneath a persistent tab bar. Switching tabs leaves other provider interfaces running. Every blank tab retains its own message draft, directory, agent, project, forms, and navigation state while agentos is open.
+Each tab opens a provider’s native terminal interface. Switching tabs keeps other sessions running. Blank tabs retain their own drafts, directory, agent, project, and navigation while AgentOS is open.
 
 - **Ctrl+T:** open a blank session tab; enter a task to launch its provider.
 - **Ctrl+1–9:** select a tab. **Alt+1–9** and **Ctrl+PageUp/PageDown** are alternatives when a terminal cannot distinguish Ctrl+number keys. Tabs can also be clicked.
@@ -126,6 +198,11 @@ A dot on an inactive tab indicates new terminal output, not confirmed task compl
 Direct CLI commands such as `agentos sessions new` and `sessions resume` retain their ordinary native terminal handoff. External editors still temporarily suspend the agentos display. No inference is needed to render the embedded terminal itself.
 
 Embedded terminals use agentos’s navy background, pale blue accents, and semantic ANSI colors. Native provider themes remain controlled by each provider’s own settings.
+
+</details>
+
+<details>
+<summary><strong>Projects, roles, sessions & memory rules</strong></summary>
 
 ## Projects, roles, and sessions
 
@@ -183,8 +260,12 @@ The persistent rules request recall of relevant global notes and saving of durab
 
 The native agent performs memory reads and writes subject to its tools and permissions. Shared rules keep project-specific details in the selected project folder and use global memory only when no context is provided. Configure Basic Memory's `agentos` collection to use `<AgentOS data>/memory`. Rules instruct agents to verify that root before using MCP tools, or use native Markdown file tools in the applicable folders if unavailable or mismatched. Global and project folders are organizational scopes within one collection, not access-control boundaries. Creating a project does not install rules, reconfigure Basic Memory, or create a note or collection.
 
-
 Project removal clears memberships and preserves sessions, automations, histories, workspace files, and memories. Global memory is shared and remains untouched by project creation, renaming, or removal. Preserved memories remain at the path shown before removal and can be removed separately on explicit request. Group reassignment never changes working directories. On upgrade, existing project IDs and session memberships are retained; previous project directory fields are removed, existing session/automation directories remain intact, and automations start ungrouped. Instructions are edited only by an explicit action on a session, using its directory (`/instructions`). Agent deletion preserves native conversations and existing session metadata.
+
+</details>
+
+<details>
+<summary><strong>Optional: searchable memory with Basic Memory</strong></summary>
 
 ## Optional: Basic Memory setup
 
@@ -255,9 +336,14 @@ Start a fresh session after installation. Ask the provider to list Basic Memory 
 
 If the tools are missing, check the executable path, `agentos mcps status basic-memory`, and the provider's native MCP diagnostics, then start another fresh session. A registered MCP definition alone does not establish a working connection. If the root differs, fix the collection mapping before using its MCP tools; native Markdown tools remain a fallback within the appropriate memory folders and permissions.
 
+</details>
+
+<details>
+<summary><strong>Provider, directory & model settings</strong></summary>
+
 ## Settings
 
-Open `/settings` for a centered settings modal. Enter opens the selected setting; `/edit` edits provider, directory, and per-provider model defaults. Storage paths are read-only. The background scheduler entry checks status; `/scheduler install` asks before installing and starting the systemd user service.
+Open `/settings` to choose your provider, default directory, and model settings. Enter opens a setting; `/edit` changes it. Storage paths are read-only. `/scheduler install` explicitly installs and starts the optional systemd user service after confirmation.
 
 The provider choice and default working directory persist in the private XDG configuration file. Leave the default directory empty to use the launch directory. Defaults apply to future sessions, including the native session wizard and CLI; explicit `--provider` and `--cwd` override them. Existing sessions and automation directories are unchanged. The home `/directory` command changes only the current launch context.
 
@@ -288,6 +374,11 @@ agentos settings model codex --clear
 
 `settings show` includes `providerDefaults`, keyed by provider with optional `model` and `reasoning` values. These preferences apply only to **new interactive sessions** started from Home, the session wizard, or `sessions new`. Settings are validated against current capabilities before session creation; unavailable models or reasoning choices produce an error and preserve the Home draft. Resuming sessions and running automations retain their existing behavior. Agentos does not rewrite provider configuration or authentication. With no overrides, the provider selects its native defaults.
 
+</details>
+
+<details>
+<summary><strong>Create, import & install skills</strong></summary>
+
 ## Skills
 
 ```sh
@@ -303,6 +394,11 @@ agentos skills remove seo --yes
 ```
 
 Managed directories live centrally under the agentos data directory. Codex and OpenCode share `~/.agents/skills`; installing/unlinking there affects both providers. Agy uses `~/.gemini/antigravity-cli/skills`. Managed installation records track exact symlink targets. Existing independently installed files/links are never adopted or replaced; external modifications become conflicts. Missing owned links can be repaired by installing again. Directory imports reject symlinks and special files. Providers decide which skills to load; agentos never injects their contents into sessions.
+
+</details>
+
+<details>
+<summary><strong>MCP servers & credentials</strong></summary>
 
 ## MCPs and credentials
 
@@ -355,6 +451,11 @@ Native MCP entries use the exact registered name, and skills use their exact ski
 JSONC edits preserve other entries/comments. TOML edits use bounded managed blocks and verify that unrelated configuration survives. Fingerprints protect external modifications during update/removal. Deletion removes only owned installations. Installations work when providers are launched outside agentos, subject to normal native configuration precedence.
 
 Definitions accept references, not plaintext environment/header credential fields. Never embed credentials in command arguments or URLs. Configure a persistent shell/OS environment, native OAuth, or an MCP server credential helper independently of agentos. Codex env references retain the same variable names; OpenCode supports its documented native interpolation. **Agy environment and bearer interpolation are unverified and rejected**; use native OAuth or a server that obtains credentials through a persistent helper. No provider authentication is modified.
+
+</details>
+
+<details>
+<summary><strong>Automations & the background scheduler</strong></summary>
 
 ## Automations
 
@@ -434,6 +535,11 @@ The systemd user service runs independently of the TUI and restarts on failure. 
 
 Optional `~/.config/agentos/worker.env` is a systemd EnvironmentFile for explicitly maintained service-only variables; keep it `0600`. It does not configure credentials for native providers launched from other shells. Native permission policies still apply to unattended execution.
 
+</details>
+
+<details>
+<summary><strong>Storage, backups & development</strong></summary>
+
 ## Persistence, validation, and development
 
 Existing installations continue using their legacy `agent-os/` directories and `agent-os.db` in place, preserving saved data, managed links, and native configuration ownership. `agentos paths` shows the locations in use. No data is moved automatically.
@@ -454,6 +560,8 @@ Drizzle migration history is committed in `src/lib/storage/migrations` and appli
 
 Application services live under `src/modules/` and are independent of the TUI and CLI. `src/app.ts` coordinates those services. Terminal UI lives under `src/tui/`, and CLI commands under `src/cli/`. Infrastructure lives under `src/lib/`: native provider integrations in `providers/`, database and migrations in `storage/`, OS process handling in `platform/`, and systemd integration in `scheduler/`. Tests isolate their databases/configs and mock provider processes. Full integration tests also require `python3`, `tmux`, and permission to create Unix sockets, PTYs, and child-process pipes.
 
-See [Contributing](CONTRIBUTING.md) for development expectations, the [security policy](SECURITY.md) for private vulnerability reporting, and the [release checklist](docs/releasing.md) for publication and clean-machine validation.
+</details>
 
-AgentOS is available under the [MIT License](LICENSE).
+---
+
+[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Release checklist](docs/releasing.md) · [MIT License](LICENSE)
