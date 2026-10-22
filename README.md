@@ -39,8 +39,6 @@ curl -fsSL https://raw.githubusercontent.com/Jarvissilva/agentos/main/scripts/in
 agentos
 ```
 
-> The installer requires a **published stable GitHub release**. If none is available yet, use the source-checkout instructions below. Run without `sudo`.
-
 Install and sign in to at least one provider using its own CLI: **Codex**, **OpenCode v2**, or **Agy**. Agy embedded sessions also require `tmux`.
 
 The installer creates `~/.local/bin/agentos`. If your shell cannot find it, add `~/.local/bin` to your PATH as instructed by the installer, or run that absolute path.
