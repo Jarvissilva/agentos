@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import type { Application } from "../app";
+import { sourceCheckoutDirectory } from "../lib/platform/paths";
 import { runInteractive } from "../lib/platform/process";
 import { resourceCommands } from "./resources";
 
@@ -15,6 +16,19 @@ export function commands(app: Application) {
     const { startTui } = await import("../tui/app");
     await startTui(app);
   });
+  program
+    .command("update")
+    .description(
+      "Install the latest stable release (installer installations only)",
+    )
+    .option("--check", "Check for updates without installing")
+    .action(async (options: { check?: boolean }) => {
+      const { updateCommand } = await import("../lib/platform/installation");
+      await updateCommand(
+        sourceCheckoutDirectory(),
+        options.check ? ["--check"] : [],
+      );
+    });
   program
     .command("paths")
     .description("Show agentos storage paths")

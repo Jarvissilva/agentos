@@ -33,6 +33,11 @@ are not part of this release process; `package.json` intentionally remains priva
 - Confirm installer failure cleanup, refusal to overwrite existing commands, and
   removal preserving user data. Automated installer tests mock network downloads
   and dependency installation; they do not replace this clean-machine check.
+- Verify `agentos update --check` against a published stable release, then update
+  an older installer-managed version with `agentos update`. Close all instances
+  and stop the scheduler first. Verify the retained application copy, unchanged
+  user data, recovery after interruption, and startup from another directory.
+  Installations predating ownership metadata require one manual reinstall.
 
 ## Publish and verify
 

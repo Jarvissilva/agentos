@@ -53,6 +53,7 @@ function fixture(options: { bun?: boolean; missing?: string } = {}) {
   const bunScript = `#!/bin/bash
 set -eu
 case "$1" in
+  */runtime.ts|*/installation.ts) exec "$TEST_REAL_BUN" "$@" ;;
   --version) printf '%s\\n' "\${TEST_BUN_VERSION:-1.4.3}" ;;
   install)
     [[ "$2" == --frozen-lockfile ]]
@@ -83,11 +84,19 @@ chmod 755 "$BUN_INSTALL/bin/bun"
     "bun.lock",
     "src/index.ts",
     "src/tui/app.tsx",
+    "src/lib/platform/installation.ts",
     "src/lib/storage/migrations/meta/_journal.json",
   ]) {
     const path = join(release, "agentos-0.1.0", file);
     mkdirSync(resolve(path, ".."), { recursive: true });
-    writeFileSync(path, "{}");
+    writeFileSync(
+      path,
+      file === "package.json"
+        ? JSON.stringify({ name: "agentos", version: "0.1.0" })
+        : file === "src/lib/platform/installation.ts"
+          ? readFileSync(resolve("src/lib/platform/installation.ts"), "utf8")
+          : "{}",
+    );
   }
   const archive = join(root, "release.tar.gz");
   const tar = Bun.spawnSync([
@@ -130,6 +139,7 @@ esac`,
     PATH: bin,
     SHELL: "/bin/bash",
     TEST_ARCHIVE: archive,
+    TEST_REAL_BUN: process.execPath,
     TEST_BOOTSTRAP: bootstrap,
     TEST_BUN_FIXTURE: bunFixture,
     TEST_LAUNCH_LOG: join(root, "launch.log"),
@@ -167,7 +177,10 @@ test("installs a release and preserves launcher cwd and arguments", () => {
   expect(result.output).toContain('export PATH="$HOME/.local/bin:$PATH"');
   expect(result.output).toContain("Install Codex, OpenCode, or Agy");
   expect(existsSync(join(f.installation, "node_modules"))).toBe(true);
-  expect(readdirSync(join(f.home, ".local/lib"))).toEqual(["agentos"]);
+  expect(readdirSync(join(f.home, ".local/lib")).sort()).toEqual([
+    "agentos",
+    "agentos.installation",
+  ]);
   const launched = Bun.spawnSync(
     [f.command, "--help", "argument with spaces", "$(literal)"],
     { cwd: f.root, env: f.env },
@@ -214,9 +227,9 @@ test("repository selection prefers CLI over environment over the canonical defau
 
 test("supports an explicit tag without querying the latest release", () => {
   const f = fixture();
-  expect(f.run({}, ["--version", "v1.0.0"]).code).toBe(0);
+  expect(f.run({}, ["--version", "v0.1.0"]).code).toBe(0);
   const downloads = readFileSync(f.env.TEST_DOWNLOAD_LOG, "utf8");
-  expect(downloads).toContain("/archive/refs/tags/v1.0.0.tar.gz");
+  expect(downloads).toContain("/archive/refs/tags/v0.1.0.tar.gz");
   expect(downloads).not.toContain("/releases/latest");
 });
 

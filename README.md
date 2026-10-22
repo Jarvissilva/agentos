@@ -24,18 +24,34 @@ agentos
 
 Install at least one supported native provider (Codex, OpenCode, or Agy) and sign in through its own CLI before starting provider sessions. The installer checks for providers but does not install them or manage their credentials. Agy also requires `tmux`. Scheduler setup remains optional and explicit; see [Persistent worker](#persistent-worker).
 
+Basic Memory is optional and is not installed or configured by the installer. AgentOS works without it. To connect searchable memory through MCP, follow [Optional: Basic Memory setup](#optional-basic-memory-setup).
+
 ### Upgrade or remove an installer installation
 
-This installer supports fresh installation only; it does not update a running application. Before replacing an installation, close AgentOS, stop the scheduler if used, and back up the AgentOS data directory and native provider storage as described under [Persistence, validation, and development](#persistence-validation-and-development).
+Installer-managed installations support a single update command:
 
-For an installation created by this installer, remove its launcher and application files:
+```sh
+agentos update --check             # Report installed and latest stable versions
+# Close AgentOS and, if used, stop the scheduler:
+agentos automations stop-service
+agentos update
+```
+
+Publishing a stable GitHub release makes it available to `agentos update`; users run the command themselves. There is no background updater. The command preserves the repository selected during installation, including forks. It refuses updates while another AgentOS process or scheduler is running and never terminates native provider sessions. Stop any native work using the installation directory before updating, too.
+
+The updater downloads and validates the release, checks its Bun requirement, installs pinned dependencies, and tests startup with temporary storage before replacing application files. Settings, databases, memories, managed resources, and native provider storage stay in place. Locally modified application files and externally modified launchers are protected: save those changes elsewhere before reinstalling. An already-current installation is left unchanged; downgrades, drafts, and prereleases are not selected. Upgrade Bun separately if a release requires a newer version.
+
+Private updater metadata, a recovery runtime, and previous application copies live in `~/.local/lib/agentos.installation`, outside the replaceable application. An interrupted replacement is recovered on the next launch or update. Failed replacements restore the previous application; restoring code does not undo database migrations. Before updating, back up application data and native provider storage as described under [Persistence, validation, and development](#persistence-validation-and-development). Start AgentOS afterward to apply migrations, and run `agentos automations install-service --start` if you previously used the scheduler.
+
+Source checkouts must be updated through Git. Older installer installations without ownership metadata require one manual reinstall; preserve local changes first. For removal or that one-time reinstall, close AgentOS, stop the scheduler, back up data, then remove only the installer-created launcher, application, and updater state:
 
 ```sh
 rm -- "$HOME/.local/bin/agentos"
 rm -rf -- "$HOME/.local/lib/agentos"
+rm -rf -- "$HOME/.local/lib/agentos.installation"
 ```
 
-For an upgrade, run the installer again with the desired release, start AgentOS to apply migrations, and reinstall/start the scheduler if previously used. If a new installation fails, reinstall the previous release before restarting; after database migrations, restoring the pre-upgrade backup may be necessary. For removal, stop after deleting the application files. These commands preserve settings, databases, memory, managed resources, caches, Bun, and native provider storage. Check `agentos paths` before removal if you also want to locate your data. Do not apply these removal instructions to a different installation layout.
+For a manual reinstall, run the installer again with the desired release. For removal, stop after deleting those files. These commands preserve settings, databases, memory, managed resources, caches, Bun, and native provider storage; they remove retained application backups. Check `agentos paths` before removal if you also want to locate your data. Do not apply these removal instructions to a different installation layout.
 
 ## Run from a source checkout
 
@@ -169,6 +185,75 @@ The native agent performs memory reads and writes subject to its tools and permi
 
 
 Project removal clears memberships and preserves sessions, automations, histories, workspace files, and memories. Global memory is shared and remains untouched by project creation, renaming, or removal. Preserved memories remain at the path shown before removal and can be removed separately on explicit request. Group reassignment never changes working directories. On upgrade, existing project IDs and session memberships are retained; previous project directory fields are removed, existing session/automation directories remain intact, and automations start ungrouped. Instructions are edited only by an explicit action on a session, using its directory (`/instructions`). Agent deletion preserves native conversations and existing session metadata.
+
+## Optional: Basic Memory setup
+
+Basic Memory adds searchable Markdown memory through MCP. It is not required for sessions, projects, agents, skills, or automations. AgentOS automatically creates its memory folders, but installing Basic Memory, registering its collection, connecting its MCP server, and installing provider memory instructions are separate, explicit steps.
+
+Without the MCP connection, providers can still read and write Markdown notes using their native file tools when memory instructions are installed and permissions allow it. From a source checkout, replace `agentos` in the commands below with `bun src/index.ts`.
+
+### 1. Install Basic Memory
+
+Install `uv` first if needed; see the [official Basic Memory installation guide](https://docs.basicmemory.com/local/local-install) for prerequisites and installation options. Then run:
+
+```sh
+uv tool install basic-memory
+basic-memory --version
+```
+
+### 2. Register the AgentOS memory root
+
+Find the root AgentOS actually uses and inspect existing Basic Memory projects:
+
+```sh
+agentos memory
+basic-memory project list --local
+```
+
+Use the `root` field from `agentos memory`, not its `path` field ending in `global`. The usual root is `~/.local/share/agentos/memory`, but XDG settings or legacy installations can change it. If Basic Memory already has an `agentos` project pointing to that root, reuse it and skip creation. If it points elsewhere, resolve the mismatch before proceeding; do not delete existing collections or notes.
+
+Only when `agentos` is absent, replace the example path below with that absolute root and register it as a local Basic Memory project (the collection referenced by AgentOS):
+
+```sh
+basic-memory project add agentos "/absolute/path/from-agentos-memory" --local
+basic-memory project list --local
+```
+
+See Basic Memory's [project management reference](https://docs.basicmemory.com/reference/cli-reference#project-management) for details. You do not need to change your default Basic Memory project.
+
+### 3. Connect the MCP server and install memory instructions
+
+Find the installed executable:
+
+```sh
+command -v basic-memory
+```
+
+Save the following as `basic-memory.yaml`, replacing `command` with the absolute executable path printed above. The provider will launch this local stdio server when it needs the connection; no separate background service is required.
+
+```yaml
+name: basic-memory
+transport: stdio
+command: /absolute/path/to/basic-memory
+args: [mcp, --project, agentos]
+```
+
+Check `agentos mcps list` first. If no central `basic-memory` definition exists, register the file, then connect it to your chosen provider and install its memory rules:
+
+```sh
+agentos mcps register ./basic-memory.yaml
+agentos mcps install basic-memory codex
+agentos memory install codex
+agentos mcps status basic-memory
+```
+
+Replace `codex` with `opencode` or `agy` for another provider. Repeat the install and memory-rule commands for each provider you use; register the central definition only once. For an existing matching definition, skip registration. To change an existing definition, review it first and use `agentos mcps update basic-memory ./basic-memory.yaml`, then reinstall for the affected provider. Conflicting or externally modified native configuration is preserved and reported for review.
+
+### 4. Verify in a fresh provider session
+
+Start a fresh session after installation. Ask the provider to list Basic Memory projects and confirm that `agentos` resolves to the same root printed by `agentos memory`. It should have Basic Memory tools available and use `global/` for shared notes or the selected AgentOS project's folder for project-specific notes. Creating AgentOS projects does not create additional Basic Memory collections.
+
+If the tools are missing, check the executable path, `agentos mcps status basic-memory`, and the provider's native MCP diagnostics, then start another fresh session. A registered MCP definition alone does not establish a working connection. If the root differs, fix the collection mapping before using its MCP tools; native Markdown tools remain a fallback within the appropriate memory folders and permissions.
 
 ## Settings
 

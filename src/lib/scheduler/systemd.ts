@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { atomicWrite } from "../platform/files";
+import { installationState } from "../platform/installation";
 import type { AppPaths } from "../platform/paths";
 
 const marker = "# Managed by agentos";
@@ -10,8 +11,15 @@ function quote(s: string) {
   if (/[\r\n\0]/.test(s)) throw new Error("Invalid service path");
   return `"${s.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%").replaceAll("$", "$$")}"`;
 }
-export function unitContents(paths: AppPaths) {
-  const file = fileURLToPath(new URL("../../index.ts", import.meta.url));
+export function unitContents(
+  paths: AppPaths,
+  file = fileURLToPath(new URL("../../index.ts", import.meta.url)),
+) {
+  const root = dirname(dirname(file));
+  const state = installationState(root);
+  const command = existsSync(join(state, "metadata.json"))
+    ? `${quote(join(state, "runtime.ts"))} launch ${quote(root)}`
+    : quote(file);
   const environment =
     ["DATA", "CONFIG", "CACHE"]
       .map((key) => {
@@ -25,7 +33,7 @@ export function unitContents(paths: AppPaths) {
       })
       .join("\n") +
     `\nEnvironment=${quote(`PATH=${join(homedir(), ".local/bin")}:${join(homedir(), ".bun/bin")}:${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`)}`;
-  return `${marker}\n[Unit]\nDescription=agentos persistent local scheduler\n\n[Service]\nType=simple\nExecStart=${quote(process.execPath)} ${quote(file)} automations worker\n${environment}\nEnvironmentFile=-${join(paths.config, "worker.env").replaceAll("%", "%%").replaceAll(" ", "\\x20")}\nUMask=0077\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=15\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n`;
+  return `${marker}\n[Unit]\nDescription=agentos persistent local scheduler\n\n[Service]\nType=simple\nExecStart=${quote(process.execPath)} ${command} automations worker\n${environment}\nEnvironmentFile=-${join(paths.config, "worker.env").replaceAll("%", "%%").replaceAll(" ", "\\x20")}\nUMask=0077\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=15\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n`;
 }
 async function systemctl(args: string[]) {
   const p = Bun.spawn(["systemctl", "--user", ...args], {

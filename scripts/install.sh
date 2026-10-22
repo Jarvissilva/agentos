@@ -8,6 +8,7 @@ stage=
 lock=
 activated=false
 finished=false
+state_activated=false
 
 fail() { printf 'agentos installer: %s\n' "$*" >&2; exit 1; }
 usage() {
@@ -48,17 +49,23 @@ done
 ((${#missing[@]} == 0)) || fail "Missing tools: ${missing[*]}. Install curl, tar, gzip, GNU coreutils, and util-linux using your Linux package manager, then retry."
 
 install_dir="$HOME/.local/lib/agentos"
+state_dir="$install_dir.installation"
 bin_dir="$HOME/.local/bin"
 launcher="$bin_dir/agentos"
 [[ ! -e "$install_dir" && ! -L "$install_dir" ]] ||
-  fail "$install_dir already exists. This installer only supports fresh installations; see README for manual upgrades."
+  fail "$install_dir already exists. Use 'agentos update', or see README for a manual reinstall."
 [[ ! -e "$launcher" && ! -L "$launcher" ]] ||
   fail "$launcher already exists. Preserve or remove the existing command yourself before installing."
+[[ ! -e "$state_dir" && ! -L "$state_dir" ]] ||
+  fail "$state_dir already exists. Preserve the updater state before reinstalling."
 
 cleanup() {
   [[ -z "$stage" ]] || rm -rf -- "$stage"
   if [[ "$activated" == true && "$finished" == false ]]; then
     rm -rf -- "$install_dir"
+  fi
+  if [[ "$state_activated" == true && "$finished" == false ]]; then
+    rm -rf -- "$state_dir"
   fi
   [[ -z "$lock" ]] || rmdir -- "$lock"
   return 0
@@ -86,7 +93,7 @@ printf 'Installing AgentOS %s from %s\n' "$version" "$repository"
 download --output "$stage/release.tar.gz" "https://github.com/$repository/archive/refs/tags/$version.tar.gz"
 mkdir -- "$stage/app"
 tar --extract --gzip --file "$stage/release.tar.gz" --directory "$stage/app" --strip-components=1 --no-same-owner --no-same-permissions
-for file in package.json bun.lock src/index.ts src/tui/app.tsx src/lib/storage/migrations/meta/_journal.json; do
+for file in package.json bun.lock src/index.ts src/tui/app.tsx src/lib/platform/installation.ts src/lib/storage/migrations/meta/_journal.json; do
   [[ -f "$stage/app/$file" && ! -L "$stage/app/$file" ]] || fail "Release is missing $file."
 done
 
@@ -117,13 +124,18 @@ fi
 )
 
 # The launcher uses absolute paths but deliberately preserves the caller's cwd.
-printf '#!/usr/bin/env bash\n# Managed by agentos installer\nexec %q %q "$@"\n' \
-  "$bun" "$install_dir/src/index.ts" > "$stage/launcher"
+printf '#!/usr/bin/env bash\n# Managed by agentos installer\nexec %q %q launch %q "$@"\n' \
+  "$bun" "$state_dir/runtime.ts" "$install_dir" > "$stage/launcher"
 chmod 755 "$stage/launcher"
+"$bun" "$stage/app/src/lib/platform/installation.ts" record \
+  "$stage/app" "$install_dir" "$launcher" "$stage/launcher" "$repository" "$version" "$bun" "$stage/state"
 [[ ! -e "$install_dir" && ! -L "$install_dir" ]] || fail 'Installation path appeared during setup; refusing to replace it.'
 mv --no-clobber --no-target-directory -- "$stage/app" "$install_dir"
 [[ ! -d "$stage/app" ]] || fail 'Installation path appeared during setup; refusing to replace it.'
 activated=true
+mv --no-clobber --no-target-directory -- "$stage/state" "$state_dir"
+[[ ! -d "$stage/state" ]] || fail 'Updater state appeared during setup; refusing to replace it.'
+state_activated=true
 # A hard link publishes the complete launcher without replacing any existing path.
 ln -- "$stage/launcher" "$launcher"
 finished=true
