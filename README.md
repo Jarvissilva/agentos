@@ -4,7 +4,7 @@ A local-first terminal application for projects, native AI providers, reusable r
 
 ## Install on Linux
 
-The installer sets up AgentOS and installs Bun 1.4.3 through [Bun's official installer](https://bun.sh/docs/installation) when Bun is missing. An existing stable Bun >=1.3.14 is reused. Install `curl`, `tar`, `gzip`, GNU coreutils (`stty`), and util-linux (`setsid`) using your distribution's package manager first; installing Bun also requires `unzip`.
+The installer sets up AgentOS and installs Bun 1.4.3 through [Bun's official installer](https://bun.sh/docs/installation) when Bun is missing. An existing stable Bun >=1.4.3 is reused. Install `curl`, `tar`, `gzip`, GNU coreutils (`stty`), and util-linux (`setsid`) using your distribution's package manager first; installing Bun also requires `unzip`.
 
 Install from [Jarvissilva/agentos](https://github.com/Jarvissilva/agentos). The installer resolves the latest published GitHub release, not the development branch; maintainers must publish a release before this command can install AgentOS.
 
@@ -64,7 +64,7 @@ ln -s "$PWD/src/index.ts" ~/.local/bin/agentos
 agentos
 ```
 
-Requires Linux, Bun >=1.3.14, GNU coreutils (`stty`), and util-linux (`setsid`) for embedded provider terminals. Tested on Arch Linux with Bun 1.4.3, OpenTUI 0.6.6, Codex 0.163.0, OpenCode 2.0.29, and Agy 1.4.3. Log in and configure models with each provider's own CLI. Keep this source checkout and its dependencies available; this release runs from source and loads migrations relative to it.
+Requires Linux, Bun >=1.4.3, GNU coreutils (`stty`), and util-linux (`setsid`) for embedded provider terminals. Tested on Arch Linux with Bun 1.4.3, OpenTUI 0.6.6, Codex 0.163.0, OpenCode 2.0.29, and Agy 1.4.3. Log in and configure models with each provider's own CLI. Keep this source checkout and its dependencies available; this release runs from source and loads migrations relative to it.
 
 Restart an already-open agentos instance to load newly added modules.
 

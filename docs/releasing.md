@@ -19,8 +19,8 @@ are not part of this release process; `package.json` intentionally remains priva
 ## Validate a release candidate
 
 - Use a clean checkout with `bun install --frozen-lockfile`; run `bun run check`,
-  `bun audit`, and `bash -n scripts/install.sh`. Both supported Bun versions in CI
-  must pass, including socket, PTY, and tmux integration tests.
+  `bun audit`, and `bash -n scripts/install.sh`. The supported Bun version (1.4.3)
+  must pass in CI, including socket, PTY, and tmux integration tests.
 - Keep package and CLI versions consistent and use a matching tag, such as `v0.1.0`.
 - Record supported Linux distributions, architecture, terminal, Bun version, and
   native provider versions in release notes. Explain known limitations and changes

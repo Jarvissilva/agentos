@@ -21,7 +21,7 @@ export class ProviderManager {
         } catch {
           return {
             id: a.id,
-            installed: Boolean(Bun.which(a.id)),
+            installed: Boolean(Bun.which(a.id, { PATH: process.env.PATH })),
             version: null,
             interactive: false,
             history: false,

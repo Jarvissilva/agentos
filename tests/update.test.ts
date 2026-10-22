@@ -39,7 +39,7 @@ function fixture() {
       JSON.stringify({
         name: "agentos",
         version,
-        engines: { bun: ">=1.3.14" },
+        engines: { bun: ">=1.4.3" },
       }),
     );
     write(join(dir, "bun.lock"), "lockfile");
@@ -209,7 +209,7 @@ test.each([
   { downloadFail: true },
   { installFail: true },
   { smokeFail: true },
-  { bunVersion: "1.3.13" },
+  { bunVersion: "1.4.2" },
 ])(
   "failed preparation preserves the original installation: %j",
   async (control) => {

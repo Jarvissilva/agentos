@@ -10,7 +10,7 @@ import type {
 export class AgyAdapter implements ProviderAdapter {
   readonly id = "agy";
   async detect(): Promise<ProviderInfo> {
-    if (!Bun.which(this.id))
+    if (!Bun.which(this.id, { PATH: process.env.PATH }))
       return {
         id: this.id,
         installed: false,

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { constants, tmpdir } from "node:os";
 import { join } from "node:path";
 import { atomicWrite } from "./files";
 
@@ -91,6 +91,9 @@ export class EmbeddedProcess {
         "Embedded provider terminals require setsid from util-linux. Install util-linux and retry.",
       );
     let command = [this.spec.command, ...this.spec.args];
+    let pollPersistent: (() => void) | undefined;
+    let frontendExit: number | undefined;
+    let completingPersistent = false;
     if (this.spec.persistent) {
       if (!Bun.which("tmux", { PATH: process.env.PATH }))
         throw new Error(
@@ -141,8 +144,8 @@ export class EmbeddedProcess {
       if (this.closed) return;
       command = ["tmux", ...target.prefix, "attach-session", "-t", target.name];
       let checking = false;
-      this.timer = setInterval(() => {
-        if (checking || this.closed) return;
+      pollPersistent = () => {
+        if (checking || this.closed || completingPersistent) return;
         checking = true;
         void tmux(
           [
@@ -151,16 +154,29 @@ export class EmbeddedProcess {
             "-p",
             "-t",
             target.name,
-            "#{pane_dead}:#{pane_dead_status}",
+            "#{pane_dead}:#{pane_dead_status}:#{pane_dead_signal}",
           ],
           true,
         )
           .then(async (result) => {
             if (this.closed) return;
-            if (result.code !== 0) this.settle(1);
+            if (result.code !== 0) this.settle(frontendExit ?? 1);
             else if (result.stdout.startsWith("1:")) {
-              const status = result.stdout.slice(2);
-              const code = /^\d+$/.test(status) ? Number(status) : 130;
+              const [, status = "", signal = ""] = result.stdout.split(":");
+              const signalNumber = Object.entries(constants.signals).find(
+                ([name]) => name === `SIG${signal.replace(/^SIG/, "")}`,
+              )?.[1];
+              const code = /^\d+$/.test(status)
+                ? Number(status)
+                : signal
+                  ? 128 + (signalNumber ?? 2)
+                  : undefined;
+              // The PTY can close before tmux has reaped its child. Keep polling
+              // until an exit status or signal is available.
+              if (code === undefined) return;
+              // Killing the pane may finish the frontend before this await
+              // resumes. Its exit must not replace the provider's result.
+              completingPersistent = true;
               // Remove the dead pane before releasing the database attachment;
               // a reconnect must never race cleanup of the previous terminal.
               await tmux(
@@ -168,13 +184,14 @@ export class EmbeddedProcess {
                 true,
               );
               this.settle(code);
-            }
+            } else if (frontendExit !== undefined) this.settle(frontendExit);
           })
           .catch(() => this.settle(1))
           .finally(() => {
             checking = false;
           });
-      }, 500);
+      };
+      this.timer = setInterval(pollPersistent, 500);
     }
     if (this.closed) return;
     try {
@@ -198,7 +215,12 @@ export class EmbeddedProcess {
         },
         terminal: this.terminal,
       });
-      void this.child.exited.then((code) => this.settle(code));
+      void this.child.exited.then((code) => {
+        if (pollPersistent) {
+          frontendExit = code;
+          pollPersistent();
+        } else this.settle(code);
+      });
     } catch (error) {
       this.disconnect();
       throw error;

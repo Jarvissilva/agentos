@@ -257,13 +257,22 @@ test("detects missing Linux tools before making any changes", () => {
   f.expectClean();
 });
 
-test("refuses old Bun without overwriting it", () => {
+test.each(["1.3.14", "1.4.2"])(
+  "refuses Bun %s without overwriting it",
+  (version) => {
+    const f = fixture();
+    const result = f.run({ TEST_BUN_VERSION: version });
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain("too old");
+    expect(existsSync(join(f.bin, "bun"))).toBe(true);
+    f.expectClean();
+  },
+);
+
+test.each(["1.4.3", "1.5.0"])("reuses compatible Bun %s", (version) => {
   const f = fixture();
-  const result = f.run({ TEST_BUN_VERSION: "1.3.13" });
-  expect(result.code).not.toBe(0);
-  expect(result.output).toContain("too old");
-  expect(existsSync(join(f.bin, "bun"))).toBe(true);
-  f.expectClean();
+  expect(f.run({ TEST_BUN_VERSION: version }).code).toBe(0);
+  expect(readFileSync(f.env.TEST_DOWNLOAD_LOG, "utf8")).not.toContain("bun.sh");
 });
 
 test("cleans up when publishing the launcher fails", () => {

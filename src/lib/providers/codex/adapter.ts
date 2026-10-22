@@ -32,7 +32,7 @@ export class CodexAdapter implements ProviderAdapter {
   }
   readonly id = "codex";
   async detect(): Promise<ProviderInfo> {
-    if (!Bun.which("codex"))
+    if (!Bun.which("codex", { PATH: process.env.PATH }))
       return {
         id: this.id,
         installed: false,

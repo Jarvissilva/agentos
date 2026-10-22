@@ -25,7 +25,7 @@ const response = z.object({
 export class OpenCodeAdapter implements ProviderAdapter {
   readonly id = "opencode";
   async detect(): Promise<ProviderInfo> {
-    if (!Bun.which(this.id))
+    if (!Bun.which(this.id, { PATH: process.env.PATH }))
       return {
         id: this.id,
         installed: false,

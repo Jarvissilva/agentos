@@ -113,10 +113,10 @@ fi
 bun_version=$("$bun" --version)
 if [[ "$bun_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
   major=${BASH_REMATCH[1]}; minor=${BASH_REMATCH[2]}; patch=${BASH_REMATCH[3]}
-  ((major > 1 || (major == 1 && (minor > 3 || (minor == 3 && patch >= 14))))) ||
-    fail "Bun $bun_version is too old. Upgrade to Bun >=1.3.14 and retry."
+  ((major > 1 || (major == 1 && (minor > 4 || (minor == 4 && patch >= 3))))) ||
+    fail "Bun $bun_version is too old. Upgrade to Bun >=1.4.3 and retry."
 else
-  fail "Unsupported Bun version: $bun_version. Use stable Bun >=1.3.14."
+  fail "Unsupported Bun version: $bun_version. Use stable Bun >=1.4.3."
 fi
 (
   cd -- "$stage/app"
