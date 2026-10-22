@@ -2,7 +2,7 @@
 
 # ◇ AgentOS
 
-**Your local agent workspace.**
+**Local-first AI agent orchestration in your terminal.**
 
 Codex, OpenCode, and Agy — together in your terminal.
 
@@ -17,7 +17,7 @@ Codex, OpenCode, and Agy — together in your terminal.
 
 </div>
 
-AgentOS is a local-first workspace for native AI coding tools. Organize your work, switch between sessions, and reuse your tools from one terminal. Each provider keeps its own interface, sign-in, and permissions.
+AgentOS is an AI agent orchestrator for native coding tools. Manage Codex, OpenCode, and Agy sessions, organize projects, and automate workflows from one terminal workspace. Each provider keeps its own interface, sign-in, and permissions.
 
 ## Highlights
 
@@ -29,6 +29,12 @@ AgentOS is a local-first workspace for native AI coding tools. Organize your wor
 | **✦ Agents & skills** | Reuse role instructions and manage skills discovered by native providers. |
 | **⌘ MCP servers** | Register servers once and explicitly install them for your providers. |
 | **◷ Automations** | Run sequential workflows on demand or on a schedule; inspect results and retry failures. |
+
+## Agent orchestration
+
+Combine reusable agent roles, skills, and MCP tools with sequential workflow automation. A research step can pass its results to a drafting step using another provider, while each step works in the same local directory. Run workflows manually or on a schedule, then inspect results, cancel runs, or retry failures.
+
+AgentOS coordinates the workflow; native providers execute each step through their own tools and permission policies. See [automations](#automations) for examples and configuration.
 
 ## Install on Linux
 

@@ -7,14 +7,46 @@ import {
 } from "../src/lib/platform/embedded-process";
 import { fixture } from "./helpers";
 
-async function until(check: () => boolean) {
+async function within<T>(
+  phase: string,
+  operation: Promise<T>,
+  timeoutMs: number,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Timed out during ${phase} (${timeoutMs}ms)`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } catch (error) {
+    throw new Error(`${phase}: ${String(error)}`, { cause: error });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function until(check: () => boolean, phase = "terminal output") {
   const deadline = Date.now() + 4000;
   while (!check()) {
     if (Date.now() > deadline)
-      throw new Error("Timed out waiting for terminal output");
+      throw new Error(`Timed out waiting for ${phase}`);
     await Bun.sleep(20);
   }
 }
+
+test("terminal phase deadlines identify a stalled helper", async () => {
+  await expect(
+    within("frontend exit", new Promise<never>(() => {}), 10),
+  ).rejects.toThrow("Timed out during frontend exit (10ms)");
+  await expect(
+    within("completed phase", Promise.resolve(9), 100),
+  ).resolves.toBe(9);
+});
 
 test("embedded PTY forwards input, terminal dimensions, and native exit status", async () => {
   let output = "";
@@ -55,7 +87,7 @@ test.skipIf(!Bun.which("tmux"))(
     const f = fixture();
     const boot = join(f.root, "starts");
     const heartbeat = join(f.root, "heartbeat");
-    const code = `import {appendFileSync,writeFileSync} from "node:fs";appendFileSync(${JSON.stringify(boot)},"start\\n");process.stdin.setRawMode(true);setInterval(()=>writeFileSync(${JSON.stringify(heartbeat)},String(Date.now())),30);console.log("PERSISTENT READY");process.stdin.on("data",bytes=>{if(bytes.toString()==="x")process.exit(9)});`;
+    const code = `import {appendFileSync,writeFileSync} from "node:fs";appendFileSync(${JSON.stringify(boot)},${JSON.stringify("start\n")});process.stdin.setRawMode(true);setInterval(()=>writeFileSync(${JSON.stringify(heartbeat)},String(Date.now())),30);console.log("PERSISTENT READY");process.stdin.on("data",bytes=>{if(bytes.toString()==="x")process.exit(9)});`;
     const persistent = {
       database: f.paths.database,
       sessionId: "persistent-test",
@@ -72,48 +104,145 @@ test.skipIf(!Bun.which("tmux"))(
     );
     let first: EmbeddedProcess | undefined;
     let second: EmbeddedProcess | undefined;
+    let owner: Bun.Subprocess<"ignore", "ignore", "pipe"> | undefined;
+    let ownerStderr = Promise.resolve("Frontend not started");
+    let firstOutput = "";
+    let output = "";
+    let failure: Error | undefined;
+    let starting: Promise<void> | undefined;
+    const tmuxCommand = async (args: string[]) => {
+      const child = Bun.spawn(["tmux", ...target.prefix, ...args], {
+        env: { ...process.env, TMUX: undefined, TMUX_PANE: undefined },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 1500,
+        killSignal: "SIGKILL",
+      });
+      return within(
+        `tmux ${args[0]}`,
+        Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+          child.exited,
+        ]),
+        2000,
+      );
+    };
     try {
-      first = new EmbeddedProcess(spec, 80, 24, () => {});
-      await first.start();
-      await until(() => existsSync(heartbeat));
+      first = new EmbeddedProcess(spec, 80, 24, (bytes) => {
+        firstOutput += new TextDecoder().decode(bytes);
+      });
+      starting = first.start();
+      await within("initial startup", starting, 6000);
+      await until(() => existsSync(heartbeat), "initial heartbeat");
       first.disconnect();
-      expect(await first.exited).toBe(0);
+      expect(await within("initial disconnect", first.exited, 1000)).toBe(0);
       const before = readFileSync(heartbeat, "utf8");
-      await until(() => readFileSync(heartbeat, "utf8") !== before);
+      await until(
+        () => readFileSync(heartbeat, "utf8") !== before,
+        "heartbeat after UI disconnect",
+      );
       // A separate frontend exits without cleanup, as on terminal loss.
-      const owner = Bun.spawn(
+      owner = Bun.spawn(
         [
           process.execPath,
           "-e",
           `import {EmbeddedProcess} from ${JSON.stringify(resolve("src/lib/platform/embedded-process.ts"))};const child=new EmbeddedProcess(${JSON.stringify(spec)},80,24,()=>{});await child.start();await Bun.sleep(100);process.exit(0);`,
         ],
-        { stdout: "ignore", stderr: "pipe" },
+        {
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "pipe",
+          timeout: 6000,
+          killSignal: "SIGKILL",
+        },
       );
-      expect(await owner.exited).toBe(0);
+      ownerStderr = new Response(owner.stderr).text();
+      expect(await within("abrupt frontend exit", owner.exited, 8000)).toBe(0);
       const afterOwnerExit = readFileSync(heartbeat, "utf8");
-      await until(() => readFileSync(heartbeat, "utf8") !== afterOwnerExit);
-      let output = "";
+      await until(
+        () => readFileSync(heartbeat, "utf8") !== afterOwnerExit,
+        "heartbeat after abrupt frontend exit",
+      );
       second = new EmbeddedProcess(spec, 90, 30, (bytes) => {
         output += new TextDecoder().decode(bytes);
       });
-      await second.start();
-      await until(() => output.includes("PERSISTENT READY"));
+      starting = second.start();
+      await within("reconnect startup", starting, 6000);
+      await until(
+        () => output.includes("PERSISTENT READY"),
+        "reconnected terminal output",
+      );
       expect(readFileSync(boot, "utf8")).toBe("start\n");
       second.write(new TextEncoder().encode("x"));
-      expect(await second.exited).toBe(9);
+      expect(await within("native exit status", second.exited, 6000)).toBe(9);
+    } catch (error) {
+      const diagnostics = await Promise.allSettled([
+        within("frontend stderr", ownerStderr, 2000),
+        tmuxCommand([
+          "list-panes",
+          "-a",
+          "-F",
+          "#{session_name} pane=#{pane_id} dead=#{pane_dead} status=#{pane_dead_status} signal=#{pane_dead_signal} pid=#{pane_pid}",
+        ]),
+        tmuxCommand([
+          "list-clients",
+          "-F",
+          "#{client_name} session=#{client_session} pid=#{client_pid}",
+        ]),
+      ]);
+      failure = new Error(
+        `${String(error)}\nInitial terminal output: ${JSON.stringify(firstOutput)}\nReconnected terminal output: ${JSON.stringify(output)}\nDiagnostics (frontend stderr, tmux panes, tmux clients): ${JSON.stringify(diagnostics.map((result) => (result.status === "fulfilled" ? result.value : String(result.reason))))}`,
+        { cause: error },
+      );
     } finally {
       first?.disconnect();
       second?.disconnect();
-      const cleanup = Bun.spawn(["tmux", ...target.prefix, "kill-server"], {
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      await cleanup.exited;
-      rmSync(dirname(target.prefix[1] ?? ""), { recursive: true, force: true });
-      f.close();
+      try {
+        const cleanup = await Promise.allSettled([
+          (async () => {
+            if (owner?.exitCode === null) {
+              owner.kill("SIGKILL");
+              await within("frontend cleanup", owner.exited, 2000);
+            }
+          })(),
+          // Disconnect prevents later startup stages. Drain any active tmux
+          // command before removing the server; its error was diagnosed above.
+          starting
+            ? within(
+                "startup cleanup",
+                starting.catch(() => {}),
+                6000,
+              )
+            : Promise.resolve(),
+        ]);
+        const serverCleanup = await Promise.allSettled([
+          tmuxCommand(["kill-server"]),
+        ]);
+        const errors = [...cleanup, ...serverCleanup].flatMap((result) =>
+          result.status === "rejected" ? [result.reason] : [],
+        );
+        if (errors.length)
+          failure = new AggregateError(
+            failure ? [failure, ...errors] : errors,
+            "Agy terminal cleanup failed",
+          );
+      } finally {
+        try {
+          rmSync(dirname(target.prefix[1] ?? ""), {
+            recursive: true,
+            force: true,
+          });
+        } finally {
+          f.close();
+        }
+      }
     }
+    if (failure) throw failure;
   },
-  10_000,
+  // Phase deadlines total at most 43s, plus 10s for diagnostics and cleanup.
+  60_000,
 );
 
 test("closing before startup does not spawn a terminal process", async () => {

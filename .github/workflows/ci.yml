@@ -22,6 +22,13 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bash -n scripts/install.sh
       - run: bun run check
+      - name: Stress test Agy terminal reconnect
+        shell: bash
+        run: |
+          for attempt in {1..20}; do
+            echo "Agy reconnect attempt $attempt/20"
+            bun test tests/embedded-process.test.ts --test-name-pattern 'Agy terminal keeps working'
+          done
       - name: Smoke test isolated CLI startup
         shell: bash
         run: |
