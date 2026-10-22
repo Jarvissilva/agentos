@@ -6,13 +6,13 @@ A local-first terminal application for projects, native AI providers, reusable r
 
 The installer sets up AgentOS and installs Bun 1.4.3 through [Bun's official installer](https://bun.sh/docs/installation) when Bun is missing. An existing stable Bun >=1.3.14 is reused. Install `curl`, `tar`, `gzip`, GNU coreutils (`stty`), and util-linux (`setsid`) using your distribution's package manager first; installing Bun also requires `unzip`.
 
-**Publishing setup:** this checkout has no public repository URL configured yet. Replace both `OWNER/REPO` placeholders below with the public GitHub repository before distributing this command. Commit the installer and publish a GitHub release with a tag such as `v0.1.0`; the default installation resolves the latest published release, not the development branch.
+Install from [Jarvissilva/agentos](https://github.com/Jarvissilva/agentos). The installer resolves the latest published GitHub release, not the development branch; maintainers must publish a release before this command can install AgentOS.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | bash -s -- --repo OWNER/REPO
+curl -fsSL https://raw.githubusercontent.com/Jarvissilva/agentos/main/scripts/install.sh | bash
 ```
 
-To choose a release, append `--version v0.1.0`. To inspect the installer before executing it, download `scripts/install.sh` and run `bash install.sh --repo OWNER/REPO`. Run without `sudo` as the user who will use AgentOS.
+To choose a release, replace `bash` above with `bash -s -- --version v0.1.0`. To inspect the installer before executing it, download `scripts/install.sh` and run `bash install.sh`. The default repository is `Jarvissilva/agentos`; use `--repo OWNER/REPO` or `AGENTOS_REPOSITORY` to install a fork. Run without `sudo` as the user who will use AgentOS.
 
 The installer keeps the source and dependencies in `~/.local/lib/agentos` and creates `~/.local/bin/agentos`. It prints the absolute launch command and shell-specific PATH instructions if needed. It preserves the directory you launch from. Existing installation directories and command paths, including symlinks, are refused rather than replaced. Downloads and dependency installation finish in a temporary directory before the command is published; failed setup removes temporary AgentOS files. Bun installed by its official installer remains available even if AgentOS installation fails.
 
@@ -367,4 +367,8 @@ bun run db:generate              # After intentional schema edits
 
 Drizzle migration history is committed in `src/lib/storage/migrations` and applied automatically when the database opens.
 
-Application services live under `src/modules/` and are independent of the TUI and CLI. `src/app.ts` coordinates those services. Terminal UI lives under `src/tui/`, and CLI commands under `src/cli/`. Infrastructure lives under `src/lib/`: native provider integrations in `providers/`, database and migrations in `storage/`, OS process handling in `platform/`, and systemd integration in `scheduler/`. Tests isolate their databases/configs and mock provider processes; real provider validation is recorded in [implementation notes](docs/implementation.md).
+Application services live under `src/modules/` and are independent of the TUI and CLI. `src/app.ts` coordinates those services. Terminal UI lives under `src/tui/`, and CLI commands under `src/cli/`. Infrastructure lives under `src/lib/`: native provider integrations in `providers/`, database and migrations in `storage/`, OS process handling in `platform/`, and systemd integration in `scheduler/`. Tests isolate their databases/configs and mock provider processes. Full integration tests also require `python3`, `tmux`, and permission to create Unix sockets, PTYs, and child-process pipes.
+
+See [Contributing](CONTRIBUTING.md) for development expectations, the [security policy](SECURITY.md) for private vulnerability reporting, and the [release checklist](docs/releasing.md) for publication and clean-machine validation.
+
+AgentOS is available under the [MIT License](LICENSE).

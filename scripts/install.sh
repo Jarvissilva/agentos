@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Set AGENTOS_REPOSITORY or pass --repo until the public repository is chosen.
-repository="${AGENTOS_REPOSITORY:-}"
+# Environment and command-line overrides support installing forks.
+repository="${AGENTOS_REPOSITORY:-Jarvissilva/agentos}"
 version=latest
 stage=
 lock=
@@ -12,10 +12,10 @@ finished=false
 fail() { printf 'agentos installer: %s\n' "$*" >&2; exit 1; }
 usage() {
   cat <<'EOF'
-Usage: bash scripts/install.sh --repo OWNER/REPO [--version vX.Y.Z]
+Usage: bash scripts/install.sh [--repo OWNER/REPO] [--version vX.Y.Z]
 
 Install a published GitHub release (latest by default) into ~/.local/lib/agentos.
-AGENTOS_REPOSITORY can supply the repository instead of --repo.
+Defaults to Jarvissilva/agentos. AGENTOS_REPOSITORY or --repo can override it.
 Requires Linux, Bash, curl, tar, gzip, stty, and setsid; unzip if Bun is missing.
 Installs Bun 1.4.3 through its official installer when no existing Bun is found.
 Does not install providers, sign in, or enable the scheduler.

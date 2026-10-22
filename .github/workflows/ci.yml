@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        bun: ["1.3.14", "1.4.3"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install terminal test prerequisites
+        run: sudo apt-get update && sudo apt-get install -y tmux python3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun }}
+      - run: bun install --frozen-lockfile
+      - run: bash -n scripts/install.sh
+      - run: bun run check
+      - name: Smoke test isolated CLI startup
+        shell: bash
+        run: |
+          smoke_root=$(mktemp -d)
+          trap 'rm -rf -- "$smoke_root"' EXIT
+          export XDG_CONFIG_HOME="$smoke_root/config"
+          export XDG_DATA_HOME="$smoke_root/data"
+          export XDG_CACHE_HOME="$smoke_root/cache"
+          bun src/index.ts --help
+          bun src/index.ts --version
+          bun src/index.ts paths
+          bun src/index.ts projects list
+
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.3"
+      - run: bun install --frozen-lockfile
+      - run: bun audit

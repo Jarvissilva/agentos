@@ -143,10 +143,10 @@ esac`,
     command: join(home, ".local/bin/agentos"),
     installation: join(home, ".local/lib/agentos"),
     run(extra: Record<string, string> = {}, args: string[] = []) {
-      const result = Bun.spawnSync(
-        ["/bin/bash", installer, "--repo", "example/agentos", ...args],
-        { env: { ...env, ...extra }, cwd: root },
-      );
+      const result = Bun.spawnSync(["/bin/bash", installer, ...args], {
+        env: { ...env, ...extra },
+        cwd: root,
+      });
       return {
         code: result.exitCode,
         output: result.stdout.toString() + result.stderr.toString(),
@@ -181,6 +181,35 @@ test("installs a release and preserves launcher cwd and arguments", () => {
     "$(literal)",
     "",
   ]);
+});
+
+test("repository selection prefers CLI over environment over the canonical default", () => {
+  const scenarios: {
+    env: Record<string, string>;
+    args: string[];
+    repository: string;
+  }[] = [
+    { env: {}, args: [], repository: "Jarvissilva/agentos" },
+    {
+      env: { AGENTOS_REPOSITORY: "example/fork" },
+      args: [],
+      repository: "example/fork",
+    },
+    {
+      env: { AGENTOS_REPOSITORY: "example/fork" },
+      args: ["--repo", "other/fork"],
+      repository: "other/fork",
+    },
+  ];
+  for (const scenario of scenarios) {
+    const f = fixture();
+    expect(f.run(scenario.env, scenario.args).code).toBe(0);
+    expect(readFileSync(f.env.TEST_DOWNLOAD_LOG, "utf8").split("\n")).toEqual([
+      `https://github.com/${scenario.repository}/releases/latest`,
+      `https://github.com/${scenario.repository}/archive/refs/tags/v0.1.0.tar.gz`,
+      "",
+    ]);
+  }
 });
 
 test("supports an explicit tag without querying the latest release", () => {
